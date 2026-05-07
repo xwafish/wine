@@ -611,6 +611,34 @@ static NTSTATUS usb_cancel_transfer(void *args)
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS usb_reset_device(void *args)
+{
+    const struct usb_reset_device_params *params = args;
+    int ret;
+
+    TRACE("device %p.\n", params->device);
+
+    if (!(ret = libusb_reset_device(params->device->handle)))
+        return STATUS_SUCCESS;
+
+    WARN("Failed to reset device: %s\n", libusb_strerror(ret));
+
+    switch (ret)
+    {
+        case LIBUSB_ERROR_NO_DEVICE:
+        case LIBUSB_ERROR_NOT_FOUND:
+            return STATUS_DEVICE_REMOVED;
+        case LIBUSB_ERROR_BUSY:
+            return STATUS_DEVICE_BUSY;
+        case LIBUSB_ERROR_NO_MEM:
+            return STATUS_NO_MEMORY;
+        case LIBUSB_ERROR_ACCESS:
+            return STATUS_ACCESS_DENIED;
+        default:
+            return STATUS_UNSUCCESSFUL;
+    }
+}
+
 static void decref_device(struct unix_device *device)
 {
     pthread_mutex_lock(&device_mutex);
@@ -650,5 +678,6 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     X(usb_exit),
     X(usb_submit_urb),
     X(usb_cancel_transfer),
+    X(usb_reset_device),
     X(usb_destroy_device),
 };

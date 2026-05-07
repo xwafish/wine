@@ -20,6 +20,7 @@
 #define __DDK_USBIODEF_H__
 
 #define USB_SUBMIT_URB 0
+#define USB_RESET_PORT 4
 
 #define FILE_DEVICE_USB FILE_DEVICE_UNKNOWN
 

@@ -69,6 +69,11 @@ struct usb_cancel_transfer_params
     void *transfer;
 };
 
+struct usb_reset_device_params
+{
+    struct unix_device *device;
+};
+
 struct usb_destroy_device_params
 {
     struct unix_device *device;
@@ -81,6 +86,7 @@ enum unix_funcs
     unix_usb_exit,
     unix_usb_submit_urb,
     unix_usb_cancel_transfer,
+    unix_usb_reset_device,
     unix_usb_destroy_device,
 };
 

@@ -630,6 +630,18 @@ static NTSTATUS usb_submit_urb(struct usb_device *device, IRP *irp)
     return STATUS_NOT_IMPLEMENTED;
 }
 
+static NTSTATUS usb_reset_device(struct usb_device *device)
+{
+    struct usb_reset_device_params params =
+    {
+        .device = device->unix_device,
+    };
+
+    TRACE("device %p.\n", device);
+
+    return WINE_UNIX_CALL(unix_usb_reset_device, &params);
+}
+
 static NTSTATUS WINAPI driver_internal_ioctl(DEVICE_OBJECT *device_obj, IRP *irp)
 {
     IO_STACK_LOCATION *stack = IoGetCurrentIrpStackLocation(irp);
@@ -655,6 +667,10 @@ static NTSTATUS WINAPI driver_internal_ioctl(DEVICE_OBJECT *device_obj, IRP *irp
     {
         case IOCTL_INTERNAL_USB_SUBMIT_URB:
             status = usb_submit_urb(device, irp);
+            break;
+
+        case IOCTL_INTERNAL_USB_RESET_PORT:
+            status = usb_reset_device(device);
             break;
 
         default:
