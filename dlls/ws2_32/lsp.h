@@ -96,17 +96,39 @@ typedef struct _WPUUPCALLTABLE
 } WPUUPCALLTABLE, *LPWPUUPCALLTABLE;
 
 /* WSP function signatures - for casting void* from WSPPROC_TABLE */
+
 typedef SOCKET (WINAPI *LSP_WSPSOCKET_FUNC)( int, int, int, LPWSAPROTOCOL_INFOW, unsigned int, DWORD );
 typedef int (WINAPI *LSP_WSPCONNECT_FUNC)( SOCKET, const struct sockaddr *, int, LPWSABUF, LPWSABUF, LPQOS, LPQOS );
 
-/* WSPStartup entry point type - matches Windows SDK ws2spi.h
- * NOTE: Standard WSPStartup has exactly 4 parameters.
- * The next provider's protocol info is NOT a parameter; the LSP
- * obtains it from lpProtocolInfo->ProtocolChain.ChainEntries[]. */
+/* ======================================================================
+ * WSPStartup entry point - TWO signatures supported
+ *
+ * 1) Standard 4-param (ret $0x10): most LSPs use this.
+ * 2) Extended 19-param (ret $0x4c): some LSP SDKs pass the entire
+ *    WPUUPCALLTABLE by value (15 function pointers expanded as
+ *    individual DWORD parameters), plus an extra function pointer
+ *    at param2.  Detected by disassembling ret instruction.
+ * ===================================================================== */
+
+/* Standard WSPStartup: 4 params, stdcall ret $0x10 */
 typedef int (WINAPI *LSP_WSPSTARTUP_FUNC)(
     WORD wVersionRequested,
     LPWSAPROTOCOL_INFOW lpProtocolInfo,
     LPWPUUPCALLTABLE lpUpcallTable,
+    LPWSPPROC_TABLE lpProcTable
+);
+
+/* Extended WSPStartup: 19 params, stdcall ret $0x4c
+ * Some LSP SDKs expand WPUUPCALLTABLE by value.
+ * Param2 is a function pointer (next provider entry point).
+ * Params 4-18 are the 15 upcall table entries. */
+typedef int (WINAPI *LSP_WSPSTARTUP_FUNC_EX)(
+    WORD wVersionRequested,
+    void *pfnNext,                /* function pointer */
+    LPWSAPROTOCOL_INFOW lpProtocolInfo,
+    void *uc0,  void *uc1,  void *uc2,  void *uc3,  void *uc4,
+    void *uc5,  void *uc6,  void *uc7,  void *uc8,  void *uc9,
+    void *uc10, void *uc11, void *uc12, void *uc13, void *uc14,
     LPWSPPROC_TABLE lpProcTable
 );
 

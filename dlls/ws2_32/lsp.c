@@ -538,6 +538,7 @@ static void lsp_init_upcall_table(void)
 int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
 {
     LSP_WSPSTARTUP_FUNC wsp_startup;
+    LSP_WSPSTARTUP_FUNC_EX wsp_startup_ex;
     LPWSPPROC_TABLE tbl;
     int ret;
 
@@ -581,6 +582,7 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     }
 
     wsp_startup = (LSP_WSPSTARTUP_FUNC)GetProcAddress(provider->dll_handle, "WSPStartup");
+    wsp_startup_ex = (LSP_WSPSTARTUP_FUNC_EX)(void*)wsp_startup;
     ERR("lsp_load_provider: WSPStartup addr=%p\n", wsp_startup);
     if (!wsp_startup)
     {
@@ -595,25 +597,30 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     lsp_init_upcall_table();
     ERR("lsp_load_provider: BEFORE WSPStartup %s upcall=%p tbl=%p\n",
         debugstr_w(provider->info.szProtocol), &g_upcall_table, tbl);
-    ERR("lsp_load_provider: diag sizeof(WPUUPCALLTABLE)=%lu sizeof(WSPPROC_TABLE)=%lu\n",
-        (unsigned long)sizeof(WPUUPCALLTABLE), (unsigned long)sizeof(WSPPROC_TABLE));
-    ERR("lsp_load_provider: diag ProtocolChain.ChainLen=%d\n",
-        provider->info.ProtocolChain.ChainLen);
-    {
-        int ci;
-        ERR("lsp_load_provider: diag ChainEntries=");
-        for (ci = 0; ci < MAX_PROTOCOL_CHAIN; ci++)
-            ERR(" %lu", provider->info.ProtocolChain.ChainEntries[ci]);
-        ERR("\n");
-    }
-    ERR("lsp_load_provider: diag dwCatalogEntryId=%lu iAddressFamily=%d iSocketType=%d iProtocol=%d\n",
-        provider->info.dwCatalogEntryId, provider->info.iAddressFamily,
-        provider->info.iSocketType, provider->info.iProtocol);
-    ERR("lsp_load_provider: diag upcall[0..4]=%p %p %p %p %p\n",
-        g_upcall_table.lpWPUCloseEvent, g_upcall_table.lpWPUCloseSocketHandle,
-        g_upcall_table.lpWPUCreateEvent, g_upcall_table.lpWPUTransmitFile,
-        g_upcall_table.lpWPUFDIsSet);
-    ret = wsp_startup(MAKEWORD(2, 2), &provider->info, &g_upcall_table, tbl);
+    /* This LSP uses a non-standard 19-param WSPStartup (ret $0x4c) where
+     * the WPUUPCALLTABLE is passed by value as 15 individual params.
+     * Param2 is a function pointer (unused, pass NULL). */
+    ret = wsp_startup_ex(
+        MAKEWORD(2, 2),            /* 1: wVersionRequested */
+        NULL,                       /* 2: reserved function ptr */
+        &provider->info,            /* 3: lpProtocolInfo */
+        g_upcall_table.lpWPUCloseEvent,              /* 4  */
+        g_upcall_table.lpWPUCloseSocketHandle,       /* 5  */
+        g_upcall_table.lpWPUCreateEvent,             /* 6  */
+        g_upcall_table.lpWPUTransmitFile,            /* 7  */
+        g_upcall_table.lpWPUFDIsSet,                 /* 8  */
+        g_upcall_table.lpWPUGetProviderPath,         /* 9  */
+        g_upcall_table.lpWPUModifyFSCloseHandle,     /* 10 */
+        g_upcall_table.lpWPUOpenCurrentThread,       /* 11 */
+        g_upcall_table.lpWPUPostMessage,             /* 12 */
+        g_upcall_table.lpWPUQueryBlockingCallback,   /* 13 */
+        g_upcall_table.lpWPUQuerySocketHandleContext, /* 14 */
+        g_upcall_table.lpWPUQueueApc,                /* 15 */
+        g_upcall_table.lpWPUResetEvent,              /* 16 */
+        g_upcall_table.lpWPUSetEvent,                /* 17 */
+        g_upcall_table.lpWPUOpenCurrentThread2,      /* 18 */
+        tbl                         /* 19: lpProcTable */
+    );
     ERR("lsp_load_provider: AFTER WSPStartup ret=%d\n", ret);
     g_loading = 0;
     if (ret != 0)
