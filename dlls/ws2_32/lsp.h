@@ -73,27 +73,26 @@ typedef struct _WSPPROC_TABLE
 } WSPPROC_TABLE, *LPWSPPROC_TABLE;
 
 /* ======================================================================
- * WPU Upcall Table - 16 WPU callbacks (0..15)
- * Provided by Winsock to LSP via WSPStartup's lpUpcallTable param.
+ * WPU Upcall Table - 15 callbacks (0..14)
+ * Layout must match Windows SDK ws2spi.h exactly.
  * ===================================================================== */
 typedef struct _WPUUPCALLTABLE
 {
     void *lpWPUCloseEvent;              /* 0  */
     void *lpWPUCloseSocketHandle;       /* 1  */
     void *lpWPUCreateEvent;             /* 2  */
-    void *lpWPUCreateThread;            /* 3  */
-    void *lpWPUDisableBlockingHook;     /* 4  */
-    void *lpWPUFDIsSet;                 /* 5  */
-    void *lpWPUGetProviderPath;         /* 6  */
-    void *lpWPUModifyFSCloseHandle;     /* 7  */
-    void *lpWPUOpenCurrentThread;       /* 8  */
-    void *lpWPUPostMessage;             /* 9  */
-    void *lpWPUQueryBlockingCallback;   /* 10 */
-    void *lpWPUQuerySocketHandleContext;/* 11 */
-    void *lpWPUQueueApc;                /* 12 */
-    void *lpWPUResetEvent;              /* 13 */
-    void *lpWPUSetEvent;                /* 14 */
-    void *lpWPUOpenCurrentThread2;      /* 15 (Vista+) */
+    void *lpWPUTransmitFile;            /* 3  */
+    void *lpWPUFDIsSet;                 /* 4  */
+    void *lpWPUGetProviderPath;         /* 5  */
+    void *lpWPUModifyFSCloseHandle;     /* 6  */
+    void *lpWPUOpenCurrentThread;       /* 7  */
+    void *lpWPUPostMessage;             /* 8  */
+    void *lpWPUQueryBlockingCallback;   /* 9  */
+    void *lpWPUQuerySocketHandleContext;/* 10 */
+    void *lpWPUQueueApc;                /* 11 */
+    void *lpWPUResetEvent;              /* 12 */
+    void *lpWPUSetEvent;                /* 13 */
+    void *lpWPUOpenCurrentThread2;      /* 14 (Vista+) */
 } WPUUPCALLTABLE, *LPWPUUPCALLTABLE;
 
 /* WSP function signatures - for casting void* from WSPPROC_TABLE */

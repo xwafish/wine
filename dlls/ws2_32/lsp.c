@@ -493,9 +493,16 @@ static int WINAPI wpu_ModifyFSCloseHandle(int *lpErrno)
     return 0;
 }
 
-static int WINAPI wpu_DisableBlockingHook(int *lpErrno)
+/* WPUTransmitFile - index 3 in standard upcall table.
+ * Stub: not supported in Wine LSP layer. */
+static BOOL WINAPI wpu_TransmitFile(SOCKET s, HANDLE hFile,
+                                     DWORD nBytes, DWORD nPerSend,
+                                     LPWSAOVERLAPPED lpov,
+                                     void *lpCompRout, DWORD dwFlags,
+                                     int *lpErrno)
 {
-    return 0;
+    if (lpErrno) *lpErrno = WSAEOPNOTSUPP;
+    return FALSE;
 }
 
 /* Global upcall table instance */
@@ -505,24 +512,23 @@ static BOOL g_upcall_inited = FALSE;
 static void lsp_init_upcall_table(void)
 {
     if (g_upcall_inited) return;
-    g_upcall_table.lpWPUCloseEvent            = wpu_CloseEvent;
-    g_upcall_table.lpWPUCloseSocketHandle     = wpu_CloseSocketHandle;
-    g_upcall_table.lpWPUCreateEvent            = wpu_CreateEvent;
-    g_upcall_table.lpWPUCreateThread           = wpu_CreateThread;
-    g_upcall_table.lpWPUDisableBlockingHook    = wpu_DisableBlockingHook;
-    g_upcall_table.lpWPUFDIsSet                = wpu_FDIsSet;
-    g_upcall_table.lpWPUGetProviderPath        = wpu_GetProviderPath;
-    g_upcall_table.lpWPUModifyFSCloseHandle    = wpu_ModifyFSCloseHandle;
-    g_upcall_table.lpWPUOpenCurrentThread      = wpu_OpenCurrentThread;
-    g_upcall_table.lpWPUPostMessage            = wpu_PostMessage;
-    g_upcall_table.lpWPUQueryBlockingCallback  = wpu_QueryBlockingCallback;
+    g_upcall_table.lpWPUCloseEvent              = wpu_CloseEvent;
+    g_upcall_table.lpWPUCloseSocketHandle       = wpu_CloseSocketHandle;
+    g_upcall_table.lpWPUCreateEvent             = wpu_CreateEvent;
+    g_upcall_table.lpWPUTransmitFile            = wpu_TransmitFile;
+    g_upcall_table.lpWPUFDIsSet                 = wpu_FDIsSet;
+    g_upcall_table.lpWPUGetProviderPath         = wpu_GetProviderPath;
+    g_upcall_table.lpWPUModifyFSCloseHandle     = wpu_ModifyFSCloseHandle;
+    g_upcall_table.lpWPUOpenCurrentThread       = wpu_OpenCurrentThread;
+    g_upcall_table.lpWPUPostMessage             = wpu_PostMessage;
+    g_upcall_table.lpWPUQueryBlockingCallback   = wpu_QueryBlockingCallback;
     g_upcall_table.lpWPUQuerySocketHandleContext = wpu_QuerySocketHandleContext;
-    g_upcall_table.lpWPUQueueApc               = wpu_QueueApc;
-    g_upcall_table.lpWPUResetEvent             = wpu_ResetEvent;
-    g_upcall_table.lpWPUSetEvent               = wpu_SetEvent;
-    g_upcall_table.lpWPUOpenCurrentThread2     = wpu_OpenCurrentThread2;
+    g_upcall_table.lpWPUQueueApc                = wpu_QueueApc;
+    g_upcall_table.lpWPUResetEvent              = wpu_ResetEvent;
+    g_upcall_table.lpWPUSetEvent                = wpu_SetEvent;
+    g_upcall_table.lpWPUOpenCurrentThread2      = wpu_OpenCurrentThread2;
     g_upcall_inited = TRUE;
-    TRACE("WPU upcall table initialized\n");
+    TRACE("WPU upcall table initialized (15 entries, std layout)\n");
 }
 
 /* ======================================================================
