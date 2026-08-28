@@ -31,7 +31,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(winsock);
 
-static LSP_CATALOG g_catalog;
+static volatile LONG g_loading = 0;  /* reentrancy guard */
 static volatile LONG g_init_done = 0;
 
 /* ======================================================================
@@ -536,14 +536,24 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     LSP_PROVIDER_ENTRY *next_p;
     int ret;
 
-    if (!provider || provider->dll_handle) return 0;
+    ERR("lsp_load_provider: ENTER provider=%p dll_handle=%p\n", provider, provider ? provider->dll_handle : NULL);
+    if (!provider || provider->dll_handle) { ERR("lsp_load_provider: skip (null or already loaded)\n"); return 0; }
+    /* Guard against reentrant calls from within LSP's WSPStartup.
+     * The LSP DLL may call WSCEnumProtocols/WSASocketW during its
+     * WSPStartup, which would re-enter lsp_load_provider and cause
+     * infinite recursion / stack overflow. */
+    if (InterlockedCompareExchange(&g_loading, 1, 0) != 0)
+    {
+        ERR("lsp_load_provider: REENTRANT CALL blocked (WSPStartup in progress)\n");
+        return -1;
+    }
     if (!provider->dll_path[0])
     {
         ERR("No DLL path for provider id=%lu\n", provider->info.dwCatalogEntryId);
-        return -1;
+        g_loading = 0; return -1;
     }
 
-    TRACE("Loading: %s\n", debugstr_w(provider->dll_path));
+    ERR("lsp_load_provider: path=%s\n", debugstr_w(provider->dll_path));
 
     /* Expand environment variables (e.g. %SYSTEMROOT%) */
     {
@@ -551,29 +561,31 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
         DWORD n = ExpandEnvironmentStringsW(provider->dll_path, expanded, MAX_PATH);
         if (n > 0 && n <= MAX_PATH)
         {
-            TRACE("Expanded path: %s\n", debugstr_w(expanded));
+            ERR("lsp_load_provider: expanded=%s\n", debugstr_w(expanded));
             provider->dll_handle = LoadLibraryW(expanded);
         }
         else
             provider->dll_handle = LoadLibraryW(provider->dll_path);
     }
+    ERR("lsp_load_provider: LoadLibrary returned dll_handle=%p\n", provider->dll_handle);
     if (!provider->dll_handle)
     {
         ERR("LoadLibrary failed '%s': %lu\n",
             debugstr_w(provider->dll_path), GetLastError());
-        return -1;
+        g_loading = 0; return -1;
     }
 
     wsp_startup = (LSP_WSPSTARTUP_FUNC)GetProcAddress(provider->dll_handle, "WSPStartup");
+    ERR("lsp_load_provider: WSPStartup addr=%p\n", wsp_startup);
     if (!wsp_startup)
     {
         ERR("No WSPStartup in '%s'\n", debugstr_w(provider->dll_path));
         FreeLibrary(provider->dll_handle); provider->dll_handle = NULL;
-        return -1;
+        g_loading = 0; return -1;
     }
 
     tbl = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(WSPPROC_TABLE));
-    if (!tbl) { FreeLibrary(provider->dll_handle); provider->dll_handle = NULL; return -1; }
+    if (!tbl) { FreeLibrary(provider->dll_handle); provider->dll_handle = NULL; g_loading = 0; return -1; }
 
     memset(&next_info, 0, sizeof(next_info));
     next_p = NULL;
@@ -585,8 +597,11 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     }
 
     lsp_init_upcall_table();
-    TRACE("Calling WSPStartup: %s (with upcall table)\n", debugstr_w(provider->info.szProtocol));
+    ERR("lsp_load_provider: BEFORE WSPStartup %s upcall=%p tbl=%p\n",
+        debugstr_w(provider->info.szProtocol), &g_upcall_table, tbl);
     ret = wsp_startup(MAKEWORD(2, 2), &provider->info, &next_info, &g_upcall_table, tbl);
+    ERR("lsp_load_provider: AFTER WSPStartup ret=%d\n", ret);
+    g_loading = 0;
     if (ret != 0)
     {
         ERR("WSPStartup failed: %d\n", ret);
@@ -597,7 +612,7 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
 
     provider->proc_table = tbl;
     provider->ref_count = 1;
-    TRACE("Loaded '%s': WSPSocket=%p WSPConnect=%p\n",
+    ERR("lsp_load_provider: OK '%s' WSPSocket=%p WSPConnect=%p\n",
           debugstr_w(provider->info.szProtocol),
           tbl->lpWSPSocket, tbl->lpWSPConnect);
     return 0;

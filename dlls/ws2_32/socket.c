@@ -3954,12 +3954,14 @@ SOCKET WINAPI WSASocketW(int af, int type, int protocol,
            af, type, protocol, lpProtocolInfo, g, flags );
 
     /* LSP dispatch: delegate to LSP WSPSocket if registered */
+    ERR( "WSASocketW ENTRY: af=%d type=%d proto=%d info=%p\n", af, type, protocol, lpProtocolInfo );
     lsp_catalog_load();
+    ERR( "WSASocketW: catalog loaded, lsp_loaded=%d\n", lsp_is_lsp_loaded() );
     if (!lpProtocolInfo && lsp_is_lsp_loaded())
     {
-        TRACE( "LSP: looking for match af=%d type=%d proto=%d\n", af, type, protocol );
+        ERR( "LSP: looking for match af=%d type=%d proto=%d\n", af, type, protocol );
         lsp_provider = lsp_find_provider_by_match( af, type, protocol );
-        TRACE( "LSP: match=%p\n", lsp_provider );
+        ERR( "LSP: match=%p\n", lsp_provider );
     }
     else if (lpProtocolInfo && lpProtocolInfo->ProtocolChain.ChainLen > 1)
     {
