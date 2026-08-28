@@ -595,6 +595,24 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     lsp_init_upcall_table();
     ERR("lsp_load_provider: BEFORE WSPStartup %s upcall=%p tbl=%p\n",
         debugstr_w(provider->info.szProtocol), &g_upcall_table, tbl);
+    ERR("lsp_load_provider: diag sizeof(WPUUPCALLTABLE)=%lu sizeof(WSPPROC_TABLE)=%lu\n",
+        (unsigned long)sizeof(WPUUPCALLTABLE), (unsigned long)sizeof(WSPPROC_TABLE));
+    ERR("lsp_load_provider: diag ProtocolChain.ChainLen=%d\n",
+        provider->info.ProtocolChain.ChainLen);
+    {
+        int ci;
+        ERR("lsp_load_provider: diag ChainEntries=");
+        for (ci = 0; ci < MAX_PROTOCOL_CHAIN; ci++)
+            ERR(" %lu", provider->info.ProtocolChain.ChainEntries[ci]);
+        ERR("\n");
+    }
+    ERR("lsp_load_provider: diag dwCatalogEntryId=%lu iAddressFamily=%d iSocketType=%d iProtocol=%d\n",
+        provider->info.dwCatalogEntryId, provider->info.iAddressFamily,
+        provider->info.iSocketType, provider->info.iProtocol);
+    ERR("lsp_load_provider: diag upcall[0..4]=%p %p %p %p %p\n",
+        g_upcall_table.lpWPUCloseEvent, g_upcall_table.lpWPUCloseSocketHandle,
+        g_upcall_table.lpWPUCreateEvent, g_upcall_table.lpWPUTransmitFile,
+        g_upcall_table.lpWPUFDIsSet);
     ret = wsp_startup(MAKEWORD(2, 2), &provider->info, &g_upcall_table, tbl);
     ERR("lsp_load_provider: AFTER WSPStartup ret=%d\n", ret);
     g_loading = 0;
