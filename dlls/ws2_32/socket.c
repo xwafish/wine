@@ -27,6 +27,7 @@
  */
 
 #include "ws2_32_private.h"
+#include "lsp.h"
 
 #define FILE_USE_FILE_POINTER_POSITION ((LONGLONG)-2)
 
@@ -637,7 +638,7 @@ BOOL WINAPI DllMain( HINSTANCE instance, DWORD reason, void *reserved )
 
 
 /***********************************************************************
- *      WSAStartup		(WS2_32.115)
+ *      WSAStartup              (WS2_32.115)
  */
 int WINAPI WSAStartup( WORD version, WSADATA *data )
 {
@@ -672,7 +673,7 @@ int WINAPI WSAStartup( WORD version, WSADATA *data )
 
 
 /***********************************************************************
- *      WSACleanup			(WS2_32.116)
+ *      WSACleanup                      (WS2_32.116)
  */
 INT WINAPI WSACleanup(void)
 {
@@ -695,15 +696,15 @@ INT WINAPI WSACleanup(void)
 
 
 /***********************************************************************
- *      WSAGetLastError		(WS2_32.111)
+ *      WSAGetLastError         (WS2_32.111)
  */
 INT WINAPI WSAGetLastError(void)
 {
-	return GetLastError();
+        return GetLastError();
 }
 
 /***********************************************************************
- *      WSASetLastError		(WS2_32.112)
+ *      WSASetLastError         (WS2_32.112)
  */
 void WINAPI WSASetLastError(INT iError) {
     SetLastError(iError);
@@ -793,7 +794,7 @@ static BOOL ws_protocol_info(SOCKET s, int unicode, WSAPROTOCOL_INFOW *buffer, i
 
 
 /***********************************************************************
- *		accept		(WS2_32.1)
+ *              accept          (WS2_32.1)
  */
 SOCKET WINAPI accept( SOCKET s, struct sockaddr *addr, int *len )
 {
@@ -1630,7 +1631,7 @@ static int server_getsockopt( SOCKET s, ULONG code, char *optval, int *optlen )
 
 
 /***********************************************************************
- *		getsockopt		(WS2_32.7)
+ *              getsockopt              (WS2_32.7)
  */
 int WINAPI getsockopt( SOCKET s, int level, int optname, char *optval, int *optlen )
 {
@@ -2749,7 +2750,7 @@ INT WINAPI WSAIoctl(SOCKET s, DWORD code, LPVOID in_buff, DWORD in_size, LPVOID 
 
 
 /***********************************************************************
- *		ioctlsocket		(WS2_32.10)
+ *              ioctlsocket             (WS2_32.10)
  */
 int WINAPI ioctlsocket( SOCKET s, LONG cmd, u_long *argp )
 {
@@ -2778,7 +2779,7 @@ int WINAPI listen( SOCKET s, int backlog )
 
 
 /***********************************************************************
- *		recv			(WS2_32.16)
+ *              recv                    (WS2_32.16)
  */
 int WINAPI recv( SOCKET s, char *buf, int len, int flags )
 {
@@ -2795,7 +2796,7 @@ int WINAPI recv( SOCKET s, char *buf, int len, int flags )
 }
 
 /***********************************************************************
- *		recvfrom		(WS2_32.17)
+ *              recvfrom                (WS2_32.17)
  */
 int WINAPI recvfrom( SOCKET s, char *buf, int len, int flags, struct sockaddr *from, int *fromlen )
 {
@@ -3125,7 +3126,7 @@ int WINAPI WSAPoll( WSAPOLLFD *fds, ULONG count, int timeout )
 
 
 /***********************************************************************
- *		send			(WS2_32.19)
+ *              send                    (WS2_32.19)
  */
 int WINAPI send( SOCKET s, const char *buf, int len, int flags )
 {
@@ -3142,7 +3143,7 @@ int WINAPI send( SOCKET s, const char *buf, int len, int flags )
 }
 
 /***********************************************************************
- *		WSASend			(WS2_32.72)
+ *              WSASend                 (WS2_32.72)
  */
 INT WINAPI WSASend( SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount,
                     LPDWORD lpNumberOfBytesSent, DWORD dwFlags,
@@ -3163,7 +3164,7 @@ INT WINAPI WSASendDisconnect( SOCKET s, LPWSABUF lpBuffers )
 
 
 /***********************************************************************
- *		WSASendTo		(WS2_32.74)
+ *              WSASendTo               (WS2_32.74)
  */
 INT WINAPI WSASendTo( SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount,
                       LPDWORD lpNumberOfBytesSent, DWORD dwFlags,
@@ -3179,7 +3180,7 @@ INT WINAPI WSASendTo( SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount,
 }
 
 /***********************************************************************
- *		sendto		(WS2_32.20)
+ *              sendto          (WS2_32.20)
  */
 int WINAPI sendto( SOCKET s, const char *buf, int len, int flags, const struct sockaddr *to, int tolen )
 {
@@ -3209,7 +3210,7 @@ static int server_setsockopt( SOCKET s, ULONG code, const char *optval, int optl
 
 
 /***********************************************************************
- *		setsockopt		(WS2_32.21)
+ *              setsockopt              (WS2_32.21)
  */
 int WINAPI setsockopt( SOCKET s, int level, int optname, const char *optval, int optlen )
 {
@@ -3697,7 +3698,7 @@ int WINAPI shutdown( SOCKET s, int how )
 
 
 /***********************************************************************
- *		socket		(WS2_32.23)
+ *              socket          (WS2_32.23)
  */
 SOCKET WINAPI socket( int af, int type, int protocol )
 {
@@ -3946,11 +3947,55 @@ SOCKET WINAPI WSASocketW(int af, int type, int protocol,
     SOCKET ret;
     DWORD err;
 
-   /*
-      FIXME: The "advanced" parameters of WSASocketW (lpProtocolInfo,
-      g, dwFlags except WSA_FLAG_OVERLAPPED) are ignored.
-   */
+       LSP_PROVIDER_ENTRY *lsp_provider = NULL;
+    LPWSPPROC_TABLE dispatch = NULL;
 
+    TRACE( "af=%d type=%d protocol=%d info=%p g=%d flags=%#lx\n",
+           af, type, protocol, lpProtocolInfo, g, flags );
+
+    /* LSP dispatch: delegate to LSP WSPSocket if registered */
+    lsp_catalog_load();
+    if (!lpProtocolInfo && lsp_is_lsp_loaded())
+    {
+        TRACE( "LSP: looking for match af=%d type=%d proto=%d\n", af, type, protocol );
+        lsp_provider = lsp_find_provider_by_match( af, type, protocol );
+        TRACE( "LSP: match=%p\n", lsp_provider );
+    }
+    else if (lpProtocolInfo && lpProtocolInfo->ProtocolChain.ChainLen > 1)
+    {
+        TRACE( "LSP: protocol info entry_id=%lu chain_len=%d\n",
+               lpProtocolInfo->dwCatalogEntryId, lpProtocolInfo->ProtocolChain.ChainLen );
+        lsp_provider = lsp_find_provider_by_entry_id( lpProtocolInfo->dwCatalogEntryId );
+        TRACE( "LSP: by entry_id=%p\n", lsp_provider );
+    }
+
+    if (lsp_provider)
+    {
+        TRACE( "LSP: found '%s', loading dispatch...\n", debugstr_w(lsp_provider->info.szProtocol) );
+        dispatch = lsp_get_provider_dispatch( lsp_provider );
+        TRACE( "LSP: dispatch=%p WSPSocket=%p\n", dispatch, dispatch ? dispatch->lpWSPSocket : NULL );
+        if (dispatch && dispatch->lpWSPSocket)
+        {
+            LSP_WSPSOCKET_FUNC wsp_socket = (LSP_WSPSOCKET_FUNC)dispatch->lpWSPSocket;
+            TRACE( "LSP: calling WSPSocket af=%d type=%d proto=%d\n", af, type, protocol );
+            {
+                SOCKET lsp_ret = wsp_socket( af, type, protocol, lpProtocolInfo, g, flags );
+                TRACE( "LSP: WSPSocket returned %#Ix\n", lsp_ret );
+                if (lsp_ret != INVALID_SOCKET)
+                {
+                    TRACE( "Delegated to LSP '%s'\n", debugstr_w(lsp_provider->info.szProtocol) );
+                    return lsp_ret;
+                }
+            }
+            WARN( "LSP WSPSocket failed, falling back\n" );
+        }
+    }
+
+    /* Base provider: NT AFD driver */
+    /*
+       FIXME: The "advanced" parameters of WSASocketW (lpProtocolInfo,
+       g, dwFlags except WSA_FLAG_OVERLAPPED) are ignored.
+    */
     TRACE( "family %d, type %d, protocol %d, info %p, group %u, flags %#lx\n",
            af, type, protocol, lpProtocolInfo, g, flags );
 
@@ -4071,7 +4116,7 @@ SOCKET WINAPI WSAJoinLeaf( SOCKET s, const struct sockaddr *addr, int addrlen, W
 }
 
 /***********************************************************************
- *      __WSAFDIsSet			(WS2_32.151)
+ *      __WSAFDIsSet                    (WS2_32.151)
  */
 int WINAPI __WSAFDIsSet( SOCKET s, fd_set *set )
 {
@@ -4088,7 +4133,7 @@ int WINAPI __WSAFDIsSet( SOCKET s, fd_set *set )
 }
 
 /***********************************************************************
- *      WSAIsBlocking			(WS2_32.114)
+ *      WSAIsBlocking                   (WS2_32.114)
  */
 BOOL WINAPI WSAIsBlocking(void)
 {
@@ -4105,7 +4150,7 @@ BOOL WINAPI WSAIsBlocking(void)
 }
 
 /***********************************************************************
- *      WSACancelBlockingCall		(WS2_32.113)
+ *      WSACancelBlockingCall           (WS2_32.113)
  */
 INT WINAPI WSACancelBlockingCall(void)
 {
@@ -4143,7 +4188,7 @@ INT WINAPI WSAUnhookBlockingHook(void)
 
 
 /***********************************************************************
- *		WSARecv			(WS2_32.67)
+ *              WSARecv                 (WS2_32.67)
  */
 int WINAPI WSARecv(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount,
                    LPDWORD NumberOfBytesReceived, LPDWORD lpFlags,

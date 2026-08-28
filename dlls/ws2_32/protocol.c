@@ -2193,6 +2193,12 @@ int WINAPI WSANSPIoctl( HANDLE lookup, DWORD code, void *in_buffer,
 }
 
 
+/* ======================================================================
+ * WSC* functions: original stubs replaced by LSP-aware implementations.
+ * Original code preserved below in #if 0 for reference.
+ * LSP implementations in protocol_lsp.c (included below).
+ * ====================================================================== */
+#if 0
 /***********************************************************************
  *      WSCEnableNSProvider   (ws2_32.@)
  */
@@ -2350,3 +2356,6 @@ int WINAPI WSCEnumProtocols( int *protocols, WSAPROTOCOL_INFOW *info, DWORD *len
 
     return ret;
 }
+#endif /* 0 - original WSC stubs */
+
+#include "protocol_lsp.c"

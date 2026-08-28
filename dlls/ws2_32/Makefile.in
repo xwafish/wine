@@ -6,6 +6,7 @@ DELAYIMPORTS = dnsapi advapi32 iphlpapi user32
 UNIX_LIBS    = $(PTHREAD_LIBS)
 
 SOURCES = \
+	lsp.c \
 	async.c \
 	inaddr.c \
 	protocol.c \
