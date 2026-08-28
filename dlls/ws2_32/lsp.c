@@ -532,9 +532,7 @@ static void lsp_init_upcall_table(void)
 int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
 {
     LSP_WSPSTARTUP_FUNC wsp_startup;
-    WSAPROTOCOL_INFOW next_info;
     LPWSPPROC_TABLE tbl;
-    LSP_PROVIDER_ENTRY *next_p;
     int ret;
 
     ERR("lsp_load_provider: ENTER provider=%p dll_handle=%p\n", provider, provider ? provider->dll_handle : NULL);
@@ -588,19 +586,10 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     tbl = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(WSPPROC_TABLE));
     if (!tbl) { FreeLibrary(provider->dll_handle); provider->dll_handle = NULL; g_loading = 0; return -1; }
 
-    memset(&next_info, 0, sizeof(next_info));
-    next_p = NULL;
-    if (provider->info.ProtocolChain.ChainLen > 1)
-    {
-        next_p = lsp_find_provider_by_entry_id(
-            provider->info.ProtocolChain.ChainEntries[1]);
-        if (next_p) memcpy(&next_info, &next_p->info, sizeof(next_info));
-    }
-
     lsp_init_upcall_table();
     ERR("lsp_load_provider: BEFORE WSPStartup %s upcall=%p tbl=%p\n",
         debugstr_w(provider->info.szProtocol), &g_upcall_table, tbl);
-    ret = wsp_startup(MAKEWORD(2, 2), &provider->info, &next_info, &g_upcall_table, tbl);
+    ret = wsp_startup(MAKEWORD(2, 2), &provider->info, &g_upcall_table, tbl);
     ERR("lsp_load_provider: AFTER WSPStartup ret=%d\n", ret);
     g_loading = 0;
     if (ret != 0)

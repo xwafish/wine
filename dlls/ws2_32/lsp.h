@@ -100,11 +100,13 @@ typedef struct _WPUUPCALLTABLE
 typedef SOCKET (WINAPI *LSP_WSPSOCKET_FUNC)( int, int, int, LPWSAPROTOCOL_INFOW, unsigned int, DWORD );
 typedef int (WINAPI *LSP_WSPCONNECT_FUNC)( SOCKET, const struct sockaddr *, int, LPWSABUF, LPWSABUF, LPQOS, LPQOS );
 
-/* WSPStartup entry point type */
+/* WSPStartup entry point type - matches Windows SDK ws2spi.h
+ * NOTE: Standard WSPStartup has exactly 4 parameters.
+ * The next provider's protocol info is NOT a parameter; the LSP
+ * obtains it from lpProtocolInfo->ProtocolChain.ChainEntries[]. */
 typedef int (WINAPI *LSP_WSPSTARTUP_FUNC)(
     WORD wVersionRequested,
     LPWSAPROTOCOL_INFOW lpProtocolInfo,
-    LPWSAPROTOCOL_INFOW lpProtocolInfoNext,
     LPWPUUPCALLTABLE lpUpcallTable,
     LPWSPPROC_TABLE lpProcTable
 );
