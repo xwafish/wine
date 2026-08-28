@@ -359,6 +359,172 @@ LSP_PROVIDER_ENTRY *lsp_find_provider_by_match(int af, int type, int protocol)
 }
 
 /* ======================================================================
+ * WPU Upcall Functions
+ *
+ * Callbacks provided by Winsock to the LSP via WSPStartup.
+ * The LSP calls these to interact with the Winsock service provider.
+ * ===================================================================== */
+
+/* Thread ID structure used by WPUOpenCurrentThread/CloseThread */
+typedef struct { HANDLE ThreadHandle; DWORD Reserved; } WSP_THREAD_ID;
+
+static BOOL WINAPI wpu_CreateEvent(HANDLE *lpEvent, int *lpErrno)
+{
+    HANDLE h = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (!h) { if (lpErrno) *lpErrno = (int)GetLastError(); return FALSE; }
+    *lpEvent = h;
+    TRACE("WPU: CreateEvent -> %p\n", h);
+    return TRUE;
+}
+
+static int WINAPI wpu_CloseEvent(HANDLE hEvent, int *lpErrno)
+{
+    TRACE("WPU: CloseEvent %p\n", hEvent);
+    if (!CloseHandle(hEvent)) { if (lpErrno) *lpErrno = (int)GetLastError(); return SOCKET_ERROR; }
+    return 0;
+}
+
+static int WINAPI wpu_SetEvent(HANDLE hEvent, int *lpErrno)
+{
+    if (!SetEvent(hEvent)) { if (lpErrno) *lpErrno = (int)GetLastError(); return SOCKET_ERROR; }
+    return 0;
+}
+
+static int WINAPI wpu_ResetEvent(HANDLE hEvent, int *lpErrno)
+{
+    if (!ResetEvent(hEvent)) { if (lpErrno) *lpErrno = (int)GetLastError(); return SOCKET_ERROR; }
+    return 0;
+}
+
+static int WINAPI wpu_OpenCurrentThread(WSP_THREAD_ID *lpThreadId, int *lpErrno)
+{
+    if (!lpThreadId) { if (lpErrno) *lpErrno = WSAEFAULT; return SOCKET_ERROR; }
+    lpThreadId->ThreadHandle = GetCurrentThread();
+    lpThreadId->Reserved = 0;
+    return 0;
+}
+
+static int WINAPI wpu_OpenCurrentThread2(WSP_THREAD_ID *lpThreadId, int *lpErrno)
+{
+    return wpu_OpenCurrentThread(lpThreadId, lpErrno);
+}
+
+static int WINAPI wpu_CloseThread(WSP_THREAD_ID ThreadId, int *lpErrno)
+{
+    /* GetCurrentThread() returns pseudo-handle, no need to close */
+    return 0;
+}
+
+static int WINAPI wpu_GetProviderPath(GUID *lpProviderId, WCHAR *path,
+                                      int *pathLen, int *lpErrno)
+{
+    LSP_PROVIDER_ENTRY *p;
+    DWORD needed;
+    if (!lpProviderId || !path || !pathLen) { if (lpErrno) *lpErrno = WSAEFAULT; return SOCKET_ERROR; }
+    p = lsp_find_provider_by_guid(lpProviderId);
+    if (!p || !p->dll_path[0]) { if (lpErrno) *lpErrno = WSANO_RECOVERY; return SOCKET_ERROR; }
+    needed = (wcslen(p->dll_path) + 1) * sizeof(WCHAR);
+    if ((DWORD)*pathLen < (int)needed) { *pathLen = (int)needed; if (lpErrno) *lpErrno = WSAEFAULT; return SOCKET_ERROR; }
+    memcpy(path, p->dll_path, needed);
+    *pathLen = (int)needed;
+    return 0;
+}
+
+static int WINAPI wpu_FDIsSet(SOCKET fd, fd_set *set)
+{
+    unsigned int i;
+    if (!set) return 0;
+    for (i = 0; i < set->fd_count; i++)
+        if (set->fd_array[i] == fd) return 1;
+    return 0;
+}
+
+static BOOL WINAPI wpu_PostMessage(HWND hWnd, UINT Msg, WPARAM wParam,
+                                    LPARAM lParam, int *lpErrno)
+{
+    return PostMessageW(hWnd, Msg, wParam, lParam);
+}
+
+static HANDLE WINAPI wpu_CreateThread(WSP_THREAD_ID *lpThreadId,
+                                        LPTHREAD_START_ROUTINE lpfn,
+                                        void *param, DWORD flags, int *lpErrno)
+{
+    DWORD tid;
+    HANDLE h = CreateThread(NULL, 0, lpfn, param, flags, &tid);
+    if (!h) { if (lpErrno) *lpErrno = (int)GetLastError(); return NULL; }
+    if (lpThreadId) { lpThreadId->ThreadHandle = h; lpThreadId->Reserved = tid; }
+    TRACE("WPU: CreateThread -> %p tid=%lu\n", h, tid);
+    return h;
+}
+
+static int WINAPI wpu_QueueApc(WSP_THREAD_ID *lpThreadId, void *lpfnApc,
+                                DWORD dwContext, int *lpErrno)
+{
+    if (!lpThreadId || !lpfnApc) { if (lpErrno) *lpErrno = WSAEFAULT; return SOCKET_ERROR; }
+    if (!QueueUserAPC((PAPCFUNC)lpfnApc, lpThreadId->ThreadHandle, dwContext))
+    { if (lpErrno) *lpErrno = (int)GetLastError(); return SOCKET_ERROR; }
+    return 0;
+}
+
+static int WINAPI wpu_QueryBlockingCallback(DWORD entryId, void **lplpfn,
+                                             DWORD **lpdwCtx, int *lpErrno)
+{
+    if (lpErrno) *lpErrno = WSAEOPNOTSUPP;
+    return SOCKET_ERROR;
+}
+
+static int WINAPI wpu_QuerySocketHandleContext(SOCKET s, DWORD *lpCtx,
+                                               int *lpErrno)
+{
+    if (lpErrno) *lpErrno = WSAEINVAL;
+    return SOCKET_ERROR;
+}
+
+static int WINAPI wpu_CloseSocketHandle(SOCKET s, int *lpErrno)
+{
+    if (closesocket(s) == SOCKET_ERROR)
+    { if (lpErrno) *lpErrno = WSAGetLastError(); return SOCKET_ERROR; }
+    return 0;
+}
+
+static int WINAPI wpu_ModifyFSCloseHandle(int *lpErrno)
+{
+    return 0;
+}
+
+static int WINAPI wpu_DisableBlockingHook(int *lpErrno)
+{
+    return 0;
+}
+
+/* Global upcall table instance */
+static WPUUPCALLTABLE g_upcall_table;
+static BOOL g_upcall_inited = FALSE;
+
+static void lsp_init_upcall_table(void)
+{
+    if (g_upcall_inited) return;
+    g_upcall_table.lpWPUCloseEvent            = wpu_CloseEvent;
+    g_upcall_table.lpWPUCloseSocketHandle     = wpu_CloseSocketHandle;
+    g_upcall_table.lpWPUCreateEvent            = wpu_CreateEvent;
+    g_upcall_table.lpWPUCreateThread           = wpu_CreateThread;
+    g_upcall_table.lpWPUDisableBlockingHook    = wpu_DisableBlockingHook;
+    g_upcall_table.lpWPUFDIsSet                = wpu_FDIsSet;
+    g_upcall_table.lpWPUGetProviderPath        = wpu_GetProviderPath;
+    g_upcall_table.lpWPUModifyFSCloseHandle    = wpu_ModifyFSCloseHandle;
+    g_upcall_table.lpWPUOpenCurrentThread      = wpu_OpenCurrentThread;
+    g_upcall_table.lpWPUPostMessage            = wpu_PostMessage;
+    g_upcall_table.lpWPUQueryBlockingCallback  = wpu_QueryBlockingCallback;
+    g_upcall_table.lpWPUQuerySocketHandleContext = wpu_QuerySocketHandleContext;
+    g_upcall_table.lpWPUQueueApc               = wpu_QueueApc;
+    g_upcall_table.lpWPUResetEvent             = wpu_ResetEvent;
+    g_upcall_table.lpWPUSetEvent               = wpu_SetEvent;
+    g_upcall_table.lpWPUOpenCurrentThread2     = wpu_OpenCurrentThread2;
+    g_upcall_inited = TRUE;
+    TRACE("WPU upcall table initialized\n");
+}
+
+/* ======================================================================
  * Provider DLL Loading
  * ===================================================================== */
 
@@ -418,8 +584,9 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
         if (next_p) memcpy(&next_info, &next_p->info, sizeof(next_info));
     }
 
-    TRACE("Calling WSPStartup: %s\n", debugstr_w(provider->info.szProtocol));
-    ret = wsp_startup(MAKEWORD(2, 2), &provider->info, &next_info, NULL, tbl);
+    lsp_init_upcall_table();
+    TRACE("Calling WSPStartup: %s (with upcall table)\n", debugstr_w(provider->info.szProtocol));
+    ret = wsp_startup(MAKEWORD(2, 2), &provider->info, &next_info, &g_upcall_table, tbl);
     if (ret != 0)
     {
         ERR("WSPStartup failed: %d\n", ret);

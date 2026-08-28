@@ -30,68 +30,73 @@ typedef enum _WSC_PROVIDER_INFO_TYPE
 #define LSP_BASE_CATALOG_ENTRY_ID 2001
 
 /* ======================================================================
- * WSP Procedure Table
- * Matches Windows WSPPROC_TABLE layout expected by LSP DLLs.
+ * Standard WSPPROC_TABLE - 35 WSP function slots (0..34)
+ * Filled by LSP DLL during WSPStartup.  Layout must match ws2spi.h.
  * ===================================================================== */
 typedef struct _WSPPROC_TABLE
 {
-    /* Upcall functions (WPU*) - indices 0..17 */
-    void *lpWPUCloseEvent;          /* 0 */
-    void *lpWPUCloseSocketHandle;   /* 1 */
-    void *lpWPUCreateEvent;         /* 2 */
-    void *lpWPUCreateThread;        /* 3 */
-    void *lpWPUDisableBlockingHook; /* 4 */
-    void *lpWPUFDIsSet;             /* 5 */
-    void *lpWPUGetProviderPath;     /* 6 */
-    void *lpWPUModifyFSCloseHandle; /* 7 */
-    void *lpWPUOpenCurrentThread;   /* 8 */
-    void *lpWPUPostMessage;         /* 9 */
-    void *lpWPUQueryBlockingCallback; /* 10 */
-    void *lpWPUQuerySocketHandleContext; /* 11 */
-    void *lpWPUQueueApc;            /* 12 */
-    void *lpWPUResetEvent;          /* 13 */
-    void *lpWPUSetEvent;            /* 14 */
-    void *lpWPUOpenCurrentThread2;  /* 15 */
-    void *lpWPUCloseThread;         /* 16 */
-    /* WSP functions - indices 17..48 - filled by LSP via WSPStartup */
-    void *lpWSPAbsorbRecv;          /* 17 */
-    void *lpWSPAbsorbRecvFrom;      /* 18 */
-    void *lpWSPAccept;              /* 19 */
-    void *lpWSPAddressToString;     /* 20 */
-    void *lpWSPAsyncSelect;         /* 21 */
-    void *lpWSPBind;                /* 22 */
-    void *lpWSPCancelBlockingCall;  /* 23 */
-    void *lpWSPCleanup;             /* 24 */
-    void *lpWSPCloseSocket;         /* 25 */
-    void *lpWSPConnect;             /* 26 - CRITICAL */
-    void *lpWSPConnectListen;       /* 27 */
-    void *lpWSPDatagramRecv;        /* 28 */
-    void *lpWSPDatagramSend;        /* 29 */
-    void *lpWSPDuplicateSocket;     /* 30 */
-    void *lpWSPEnumNetworkEvents;   /* 31 */
-    void *lpWSPEventSelect;         /* 32 */
-    void *lpWSPGetOverlappedResult; /* 33 */
-    void *lpWSPGetPeerName;         /* 34 */
-    void *lpWSPGetQOSByName;        /* 35 */
-    void *lpWSPGetSockName;         /* 36 */
-    void *lpWSPGetSockOpt;          /* 37 */
-    void *lpWSPIoctl;               /* 38 */
-    void *lpWSPJoinLeaf;            /* 39 */
-    void *lpWSPListen;              /* 40 */
-    void *lpWSPRecv;                /* 41 */
-    void *lpWSPRecvDisconnect;      /* 42 */
-    void *lpWSPRecvFrom;            /* 43 */
-    void *lpWSPSelect;              /* 44 */
-    void *lpWSPSend;                /* 45 */
-    void *lpWSPSendDisconnect;      /* 46 */
-    void *lpWSPSendTo;              /* 47 */
-    void *lpWSPSetSockOpt;          /* 48 */
-    void *lpWSPShutdown;            /* 49 */
-    void *lpWSPSocket;              /* 50 - CRITICAL */
-    void *lpWSPStringToAddress;     /* 51 */
+    void *lpWSPAbsorbRecv;          /* 0  */
+    void *lpWSPAbsorbRecvFrom;      /* 1  */
+    void *lpWSPAccept;              /* 2  */
+    void *lpWSPAddressToString;     /* 3  */
+    void *lpWSPAsyncSelect;         /* 4  */
+    void *lpWSPBind;                /* 5  */
+    void *lpWSPCancelBlockingCall;  /* 6  */
+    void *lpWSPCleanup;             /* 7  */
+    void *lpWSPCloseSocket;         /* 8  */
+    void *lpWSPConnect;             /* 9  - CRITICAL */
+    void *lpWSPConnectListen;       /* 10 */
+    void *lpWSPDatagramRecv;        /* 11 */
+    void *lpWSPDatagramSend;        /* 12 */
+    void *lpWSPDuplicateSocket;     /* 13 */
+    void *lpWSPEnumNetworkEvents;   /* 14 */
+    void *lpWSPEventSelect;         /* 15 */
+    void *lpWSPGetOverlappedResult; /* 16 */
+    void *lpWSPGetPeerName;         /* 17 */
+    void *lpWSPGetQOSByName;        /* 18 */
+    void *lpWSPGetSockName;         /* 19 */
+    void *lpWSPGetSockOpt;          /* 20 */
+    void *lpWSPIoctl;               /* 21 */
+    void *lpWSPJoinLeaf;            /* 22 */
+    void *lpWSPListen;              /* 23 */
+    void *lpWSPRecv;                /* 24 */
+    void *lpWSPRecvDisconnect;      /* 25 */
+    void *lpWSPRecvFrom;            /* 26 */
+    void *lpWSPSelect;              /* 27 */
+    void *lpWSPSend;                /* 28 */
+    void *lpWSPSendDisconnect;      /* 29 */
+    void *lpWSPSendTo;              /* 30 */
+    void *lpWSPSetSockOpt;          /* 31 */
+    void *lpWSPShutdown;            /* 32 */
+    void *lpWSPSocket;              /* 33 - CRITICAL */
+    void *lpWSPStringToAddress;     /* 34 */
 } WSPPROC_TABLE, *LPWSPPROC_TABLE;
 
-/* WSPSocket function signature - for casting void* from WSPPROC_TABLE */
+/* ======================================================================
+ * WPU Upcall Table - 16 WPU callbacks (0..15)
+ * Provided by Winsock to LSP via WSPStartup's lpUpcallTable param.
+ * ===================================================================== */
+typedef struct _WPUUPCALLTABLE
+{
+    void *lpWPUCloseEvent;              /* 0  */
+    void *lpWPUCloseSocketHandle;       /* 1  */
+    void *lpWPUCreateEvent;             /* 2  */
+    void *lpWPUCreateThread;            /* 3  */
+    void *lpWPUDisableBlockingHook;     /* 4  */
+    void *lpWPUFDIsSet;                 /* 5  */
+    void *lpWPUGetProviderPath;         /* 6  */
+    void *lpWPUModifyFSCloseHandle;     /* 7  */
+    void *lpWPUOpenCurrentThread;       /* 8  */
+    void *lpWPUPostMessage;             /* 9  */
+    void *lpWPUQueryBlockingCallback;   /* 10 */
+    void *lpWPUQuerySocketHandleContext;/* 11 */
+    void *lpWPUQueueApc;                /* 12 */
+    void *lpWPUResetEvent;              /* 13 */
+    void *lpWPUSetEvent;                /* 14 */
+    void *lpWPUOpenCurrentThread2;      /* 15 (Vista+) */
+} WPUUPCALLTABLE, *LPWPUUPCALLTABLE;
+
+/* WSP function signatures - for casting void* from WSPPROC_TABLE */
 typedef SOCKET (WINAPI *LSP_WSPSOCKET_FUNC)( int, int, int, LPWSAPROTOCOL_INFOW, unsigned int, DWORD );
 typedef int (WINAPI *LSP_WSPCONNECT_FUNC)( SOCKET, const struct sockaddr *, int, LPWSABUF, LPWSABUF, LPQOS, LPQOS );
 
@@ -100,7 +105,7 @@ typedef int (WINAPI *LSP_WSPSTARTUP_FUNC)(
     WORD wVersionRequested,
     LPWSAPROTOCOL_INFOW lpProtocolInfo,
     LPWSAPROTOCOL_INFOW lpProtocolInfoNext,
-    void *lpUpcallTable,
+    LPWPUUPCALLTABLE lpUpcallTable,
     LPWSPPROC_TABLE lpProcTable
 );
 
