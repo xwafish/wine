@@ -31,6 +31,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(winsock);
 
+static LSP_CATALOG g_catalog;
 static volatile LONG g_loading = 0;  /* reentrancy guard */
 static volatile LONG g_init_done = 0;
 
