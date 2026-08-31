@@ -35,6 +35,7 @@ static LSP_CATALOG g_catalog;
 static volatile LONG g_loading = 0;  /* reentrancy guard */
 static volatile LONG g_init_done = 0;
 static BOOL g_preloaded = FALSE;  /* WSPStartup preloaded at catalog load time */
+static void lsp_preload_providers(void);  /* forward decl - defined after upcall table */
 
 /* ======================================================================
  * Thread-safe one-time initialization
@@ -426,7 +427,7 @@ static int WINAPI wpu_OpenCurrentThread2(WSP_THREAD_ID *lpThreadId, int *lpErrno
 }
 
 /* wpu_CloseThread - not in standard WPUUPCALLTABLE but kept as reference */
-static int WINAPI wpu_CloseThread(WSP_THREAD_ID ThreadId, int *lpErrno)
+static int WINAPI __attribute__((unused)) wpu_CloseThread(WSP_THREAD_ID ThreadId, int *lpErrno)
 {
     (void)ThreadId; (void)lpErrno;
     return 0;
@@ -462,7 +463,7 @@ static BOOL WINAPI wpu_PostMessage(HWND hWnd, UINT Msg, WPARAM wParam,
     return PostMessageW(hWnd, Msg, wParam, lParam);
 }
 
-static HANDLE WINAPI wpu_CreateThread(WSP_THREAD_ID *lpThreadId,
+static HANDLE WINAPI __attribute__((unused)) wpu_CreateThread(WSP_THREAD_ID *lpThreadId,
                                         LPTHREAD_START_ROUTINE lpfn,
                                         void *param, DWORD flags, int *lpErrno)
 {
