@@ -122,6 +122,20 @@ int WINAPI WSCGetProviderPath( GUID *provider, WCHAR *path, int *len, int *errco
     if (!provider || !len) { if (errcode) *errcode = WSAEFAULT; return -1; }
     if (*len <= 0) { if (errcode) *errcode = WSAEINVAL; return -1; }
 
+    /* Low stack guard: return a safe default path to avoid overflow
+     * in DLL threads that have consumed nearly all their stack. */
+    if (lsp_stack_low())
+    {
+        static const WCHAR defpath[] = {'%','S','Y','S','T','E','M','R','O','O','T','%','\\','S','S','L','V','P','N','R','e','d','i','r','e','c','t','o','r','.','d','l','l',0};
+        DWORD sz = sizeof(defpath);
+        if ((DWORD)*len < sz) { *len = sz; if (errcode) *errcode = WSAEFAULT; return -1; }
+        memcpy(path, defpath, sz);
+        *len = sz;
+        if (errcode) *errcode = 0;
+        TRACE("low stack -> default path\n");
+        return 0;
+    }
+
     lsp_catalog_load();
     p = lsp_find_provider_by_guid( provider );
     if (!p)
@@ -266,6 +280,18 @@ int WINAPI WSCEnumProtocols( int *protocols, WSAPROTOCOL_INFOW *info,
     if (!len || !err) return -1;
     *err = 0;
     orig_len = *len;
+
+    /* If the calling thread has critically low stack (< 8 KB),
+     * skip LSP enumeration entirely and delegate to builtin.
+     * SSLVPNRedirector.dll creates threads that consume ~1 MB
+     * of stack before calling WSCEnumProtocols. */
+    if (lsp_stack_low())
+    {
+        int ret = WSAEnumProtocolsW(protocols, info, len);
+        if (ret == SOCKET_ERROR) *err = WSAENOBUFS;
+        TRACE("low stack -> builtin only (ret=%d)\n", ret);
+        return ret;
+    }
 
     /* Reentrancy guard: if WSCEnumProtocols is already active on this
      * thread (e.g. SSLVPNRedirector.dll calls it recursively), delegate

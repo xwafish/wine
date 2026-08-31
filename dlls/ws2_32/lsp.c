@@ -38,6 +38,30 @@ static BOOL g_preloaded = FALSE;  /* WSPStartup preloaded at catalog load time *
 static void lsp_preload_providers(void);  /* forward decl - defined after upcall table */
 
 /* ======================================================================
+ * Stack space check for WSC* functions called from LSP DLL threads.
+ *
+ * SSLVPNRedirector.dll creates worker threads that consume nearly all
+ * of their 1 MB stack before calling WSCEnumProtocols / WSCGetProviderPath.
+ * If we call into ws2_32 with only ~2 KB left, even minimal stack usage
+ * triggers a stack overflow exception.
+ *
+ * Fix: check available stack space via TEB.  If critically low (< 8 KB),
+ * return safe defaults without deep call chains.
+ * ===================================================================== */
+static BOOL lsp_stack_low(void)
+{
+#ifdef __i386__
+    ULONG_PTR sp;
+    ULONG_PTR limit;
+    __asm__ __volatile__("movl %%esp, %0" : "=r"(sp));
+    limit = (ULONG_PTR)NtCurrentTeb()->StackLimit;
+    return (sp - limit) < 8192;
+#else
+    return FALSE;
+#endif
+}
+
+/* ======================================================================
  * Thread-safe one-time initialization
  *
  * CRITICAL: lsp_catalog_init() was never called anywhere, so the
