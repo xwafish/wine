@@ -24,6 +24,24 @@
 /* lsp.h must always be included - it provides LSP types and function declarations */
 #include "lsp.h"
 
+/* Thread-local reentrancy guard for WSCEnumProtocols.
+ *
+ * SSLVPNRedirector.dll calls WSCEnumProtocols recursively from within
+ * its own processing of WSCEnumProtocols results. Each recursion level
+ * consumes ~4 KB of stack, eventually overflowing even a 1 MB stack.
+ *
+ * Fix: detect recursive entry via TLS. On recursive calls, delegate
+ * directly to the builtin WSAEnumProtocolsW (which does not call back
+ * into WSCEnumProtocols), skipping LSP enumeration entirely.
+ */
+static DWORD tls_wsc_reentrant = TLS_OUT_OF_INDEXES;
+
+static void ensure_tls_reentrant(void)
+{
+    if (tls_wsc_reentrant == TLS_OUT_OF_INDEXES)
+        tls_wsc_reentrant = TlsAlloc();
+}
+
 /* The following guard provides stub macros only when this file is compiled
  * standalone (syntax check). When #included from protocol.c, the parent
  * file already defined WINE_DEFAULT_DEBUG_CHANNEL via wine/debug.h. */
@@ -242,11 +260,28 @@ int WINAPI WSCEnumProtocols( int *protocols, WSAPROTOCOL_INFOW *info,
     DWORD lsp_needed = 0, builtin_needed = 0, total_needed;
     int lsp_count = 0, builtin_count = 0;
     DWORD orig_len;
+    BOOL is_reentrant;
 
     TRACE( "(protocols=%p, info=%p, len=%p, err=%p)\n", protocols, info, len, err );
     if (!len || !err) return -1;
     *err = 0;
     orig_len = *len;
+
+    /* Reentrancy guard: if WSCEnumProtocols is already active on this
+     * thread (e.g. SSLVPNRedirector.dll calls it recursively), delegate
+     * directly to the builtin enumeration to avoid unbounded recursion. */
+    ensure_tls_reentrant();
+    is_reentrant = (TlsGetValue(tls_wsc_reentrant) != NULL);
+    TlsSetValue(tls_wsc_reentrant, (LPVOID)1);
+
+    if (is_reentrant)
+    {
+        int ret = WSAEnumProtocolsW(protocols, info, len);
+        if (ret == SOCKET_ERROR) *err = WSAENOBUFS;
+        TRACE("reentrant call -> builtin only (ret=%d)\n", ret);
+        TlsSetValue(tls_wsc_reentrant, NULL);
+        return ret;
+    }
 
     lsp_catalog_load();
 
@@ -271,6 +306,7 @@ int WINAPI WSCEnumProtocols( int *protocols, WSAPROTOCOL_INFOW *info,
         *len = total_needed;
         *err = WSAENOBUFS;
         TRACE( "-> WSAENOBUFS, need %lu bytes\n", total_needed );
+        TlsSetValue(tls_wsc_reentrant, NULL);
         return -1;
     }
 
@@ -292,19 +328,22 @@ int WINAPI WSCEnumProtocols( int *protocols, WSAPROTOCOL_INFOW *info,
             *len = lsp_actual + builtin_count * sizeof(WSAPROTOCOL_INFOW);
             TRACE( "-> %d LSP + %d builtin = %d total, %lu bytes\n",
                    lsp_filled, builtin_count, lsp_filled + builtin_count, *len );
+            TlsSetValue(tls_wsc_reentrant, NULL);
             return lsp_filled + builtin_count;
         }
         /* Builtin failed – return just LSP providers */
         *len = lsp_actual;
         TRACE( "-> %d LSP only (builtin failed), %lu bytes\n", lsp_filled, *len );
+        TlsSetValue(tls_wsc_reentrant, NULL);
         return lsp_filled;
     }
 
     /* Step 6: no LSP providers – return only builtins */
     builtin_needed = orig_len;
     builtin_count = WSAEnumProtocolsW( protocols, info, &builtin_needed );
-    if (builtin_count < 0) { *len = builtin_needed; *err = WSAENOBUFS; return -1; }
+    if (builtin_count < 0) { *len = builtin_needed; *err = WSAENOBUFS; TlsSetValue(tls_wsc_reentrant, NULL); return -1; }
     *len = builtin_count * sizeof(WSAPROTOCOL_INFOW);
     TRACE( "-> %d builtin only, %lu bytes\n", builtin_count, *len );
+    TlsSetValue(tls_wsc_reentrant, NULL);
     return builtin_count;
 }
