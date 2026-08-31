@@ -177,6 +177,6 @@ LSP_PROVIDER_ENTRY *lsp_get_chain_next(LSP_PROVIDER_ENTRY *provider);
 BOOL     lsp_is_lsp_loaded(void);
 void     lsp_set_lsp_enabled(BOOL enabled);
 int      lsp_write_provider_order(DWORD *entry, DWORD number);
-BOOL     lsp_stack_low(void);  /* check if current thread has < 8KB stack left */
+BOOL     lsp_stack_low(void);  /* check if current thread has < 32KB stack left */
 
 #endif /* __WINE_WS2_32_LSP_H */

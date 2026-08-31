@@ -4428,6 +4428,18 @@ int WINAPI WSAEnumProtocolsW( int *filter, WSAPROTOCOL_INFOW *protocols, DWORD *
 {
     DWORD i, count = 0;
 
+    /* Low stack guard: some LSP DLLs (e.g. SSLVPNRedirector.dll) create
+     * worker threads that consume nearly all of their 1 MB stack before
+     * calling WSAEnumProtocolsW.  Even our minimal builtin enumeration
+     * plus the DLL's post-return processing can overflow the stack.
+     * Return 0 protocols immediately so the DLL bails out early. */
+    if (lsp_stack_low())
+    {
+        WARN("low stack -> returning 0 protocols\n");
+        if (size) *size = 0;
+        return 0;
+    }
+
     TRACE("filter %p, protocols %p, size %p\n", filter, protocols, size);
 
     for (i = 0; i < ARRAY_SIZE(supported_protocols); ++i)

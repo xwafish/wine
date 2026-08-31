@@ -45,8 +45,11 @@ static void lsp_preload_providers(void);  /* forward decl - defined after upcall
  * If we call into ws2_32 with only ~2 KB left, even minimal stack usage
  * triggers a stack overflow exception.
  *
- * Fix: check available stack space via TEB.  If critically low (< 8 KB),
- * return safe defaults without deep call chains.
+ * Fix: check available stack space via VirtualQuery.  If critically low
+ * (< 32 KB from allocation base), return safe defaults without deep call
+ * chains.  The 32 KB threshold accounts for the DLL's own stack usage
+ * AFTER our functions return (SSLVPNRedirector.dll uses ~14-20 KB more
+ * stack processing WSCEnumProtocols/WSCGetProviderPath results).
  * ===================================================================== */
 BOOL lsp_stack_low(void)
 {
@@ -55,7 +58,7 @@ BOOL lsp_stack_low(void)
     static MEMORY_BASIC_INFORMATION mbi;  /* static to avoid stack allocation */
     __asm__ __volatile__("movl %%esp, %0" : "=r"(sp));
     if (!VirtualQuery((LPCVOID)sp, &mbi, sizeof(mbi))) return FALSE;
-    return (sp - (ULONG_PTR)mbi.AllocationBase) < 8192;
+    return (sp - (ULONG_PTR)mbi.AllocationBase) < 32768;
 #else
     return FALSE;
 #endif
