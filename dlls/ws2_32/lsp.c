@@ -34,6 +34,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(winsock);
 static LSP_CATALOG g_catalog;
 static volatile LONG g_loading = 0;  /* reentrancy guard */
 static volatile LONG g_init_done = 0;
+static BOOL g_preloaded = FALSE;  /* WSPStartup preloaded at catalog load time */
 
 /* ======================================================================
  * Thread-safe one-time initialization
@@ -133,6 +134,7 @@ void lsp_catalog_cleanup(void)
     LeaveCriticalSection(&g_catalog.lock);
     DeleteCriticalSection(&g_catalog.lock);
     g_catalog.initialized = FALSE;
+    g_preloaded = FALSE;
 }
 
 /* ======================================================================
@@ -155,6 +157,7 @@ int lsp_catalog_load(void)
         LIST_FOR_EACH_ENTRY_SAFE(p, n, &g_catalog.providers, LSP_PROVIDER_ENTRY, entry)
             free_provider(p);
         g_catalog.count = 0;
+        g_preloaded = FALSE;  /* allow re-preloading after reload */
     }
 
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, LSP_CATALOG_REGISTRY_PATH,
@@ -232,6 +235,18 @@ int lsp_catalog_load(void)
     }
     RegCloseKey(hCatalog);
     LeaveCriticalSection(&g_catalog.lock);
+
+    /* Preload all LSP DLLs and call WSPStartup while the call stack
+     * is still shallow.  This avoids stack overflow for LSPs that use
+     * large alloca inside WSPStartup (e.g. SSLVPNRedirector.dll uses
+     * ~4 KB).  Must be called AFTER releasing the lock because
+     * lsp_load_provider -> WSPStartup may call back into ws2_32. */
+    if (!g_preloaded && g_catalog.count > 0)
+    {
+        g_preloaded = TRUE;
+        lsp_preload_providers();
+    }
+
     TRACE("LSP catalog: %d providers\n", g_catalog.count);
     return 0;
 }
@@ -410,9 +425,10 @@ static int WINAPI wpu_OpenCurrentThread2(WSP_THREAD_ID *lpThreadId, int *lpErrno
     return wpu_OpenCurrentThread(lpThreadId, lpErrno);
 }
 
+/* wpu_CloseThread - not in standard WPUUPCALLTABLE but kept as reference */
 static int WINAPI wpu_CloseThread(WSP_THREAD_ID ThreadId, int *lpErrno)
 {
-    /* GetCurrentThread() returns pseudo-handle, no need to close */
+    (void)ThreadId; (void)lpErrno;
     return 0;
 }
 
@@ -531,6 +547,41 @@ static void lsp_init_upcall_table(void)
     TRACE("WPU upcall table initialized (15 entries, std layout)\n");
 }
 
+/* =====================================================================
+ * Preload all LSP providers (call WSPStartup while stack is shallow)
+ *
+ * Some LSPs (e.g. SSLVPNRedirector.dll) use alloca(~4 KB) inside
+ * WSPStartup.  When called from deep inside WSASocketW (e.g. Firefox
+ * network stack), the thread stack may have < 4 KB remaining, causing
+ * stack overflow.  Preloading at catalog-load time (WSAStartup path)
+ * avoids this because the call stack is still shallow.
+ *
+ * IMPORTANT: Must be called WITHOUT g_catalog.lock held, because
+ * lsp_load_provider -> WSPStartup may call back into ws2_32.
+ * ===================================================================== */
+static void lsp_preload_providers(void)
+{
+    LSP_PROVIDER_ENTRY *p;
+    int loaded = 0, failed = 0;
+
+    ERR("lsp_preload_providers: preloading all LSP providers (shallow stack)\n");
+
+    LIST_FOR_EACH_ENTRY(p, &g_catalog.providers, LSP_PROVIDER_ENTRY, entry)
+    {
+        if (!p->enabled) continue;
+        if (p->dll_handle) { loaded++; continue; }
+        ERR("lsp_preload_providers: loading '%s'\n", debugstr_w(p->info.szProtocol));
+        if (lsp_load_provider(p) != 0)
+        {
+            ERR("lsp_preload_providers: FAILED '%s'\n", debugstr_w(p->info.szProtocol));
+            failed++;
+        }
+        else
+            loaded++;
+    }
+    ERR("lsp_preload_providers: done (loaded=%d, failed=%d)\n", loaded, failed);
+}
+
 /* ======================================================================
  * Provider DLL Loading
  * ===================================================================== */
@@ -543,6 +594,7 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     int ret;
 
     ERR("lsp_load_provider: ENTER provider=%p dll_handle=%p\n", provider, provider ? provider->dll_handle : NULL);
+
     if (!provider || provider->dll_handle) { ERR("lsp_load_provider: skip (null or already loaded)\n"); return 0; }
     /* Guard against reentrant calls from within LSP's WSPStartup.
      * The LSP DLL may call WSCEnumProtocols/WSASocketW during its
@@ -600,6 +652,7 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     /* This LSP uses a non-standard 19-param WSPStartup (ret $0x4c) where
      * the WPUUPCALLTABLE is passed by value as 15 individual params.
      * Param2 is a function pointer (unused, pass NULL). */
+
     ret = wsp_startup_ex(
         MAKEWORD(2, 2),            /* 1: wVersionRequested */
         NULL,                       /* 2: reserved function ptr */
