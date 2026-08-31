@@ -552,10 +552,8 @@ static void lsp_init_upcall_table(void)
  * Preload all LSP providers (call WSPStartup while stack is shallow)
  *
  * Some LSPs (e.g. SSLVPNRedirector.dll) use alloca(~4 KB) inside
- * WSPStartup.  When called from deep inside WSASocketW (e.g. Firefox
- * network stack), the thread stack may have < 4 KB remaining, causing
- * stack overflow.  Preloading at catalog-load time (WSAStartup path)
- * avoids this because the call stack is still shallow.
+ * WSPStartup.  Preloading at catalog-load time avoids stack overflow
+ * when WSPStartup is later needed from a deep call stack.
  *
  * IMPORTANT: Must be called WITHOUT g_catalog.lock held, because
  * lsp_load_provider -> WSPStartup may call back into ws2_32.
@@ -565,7 +563,7 @@ static void lsp_preload_providers(void)
     LSP_PROVIDER_ENTRY *p;
     int loaded = 0, failed = 0;
 
-    ERR("lsp_preload_providers: preloading all LSP providers (shallow stack)\n");
+    ERR("lsp_preload_providers: preloading all LSP providers\n");
 
     LIST_FOR_EACH_ENTRY(p, &g_catalog.providers, LSP_PROVIDER_ENTRY, entry)
     {
@@ -583,7 +581,51 @@ static void lsp_preload_providers(void)
     ERR("lsp_preload_providers: done (loaded=%d, failed=%d)\n", loaded, failed);
 }
 
-/* ======================================================================
+/* =====================================================================
+ * WSPStartup on separate thread to avoid stack overflow
+ *
+ * SSLVPNRedirector.dll uses alloca(~4 KB) inside WSPStartup.
+ * Apps like Firefox may have very deep call stacks when reaching
+ * Winsock, leaving < 4 KB for alloca -> stack overflow.
+ *
+ * Fix: call WSPStartup on a NEW thread with 1 MB stack.
+ * The calling thread blocks until WSPStartup completes.
+ * ===================================================================== */
+typedef struct {
+    LSP_WSPSTARTUP_FUNC_EX wsp_startup_ex;
+    WSAPROTOCOL_INFOW    *info;
+    LPWSPPROC_TABLE       tbl;
+    int                   result;
+} LSP_WSPSTARTUP_ARGS;
+
+static DWORD WINAPI lsp_wspstartup_thread(LPVOID arg)
+{
+    LSP_WSPSTARTUP_ARGS *a = (LSP_WSPSTARTUP_ARGS *)arg;
+    a->result = a->wsp_startup_ex(
+        MAKEWORD(2, 2),
+        NULL,
+        a->info,
+        g_upcall_table.lpWPUCloseEvent,
+        g_upcall_table.lpWPUCloseSocketHandle,
+        g_upcall_table.lpWPUCreateEvent,
+        g_upcall_table.lpWPUTransmitFile,
+        g_upcall_table.lpWPUFDIsSet,
+        g_upcall_table.lpWPUGetProviderPath,
+        g_upcall_table.lpWPUModifyFSCloseHandle,
+        g_upcall_table.lpWPUOpenCurrentThread,
+        g_upcall_table.lpWPUPPostMessage,
+        g_upcall_table.lpWPUQueryBlockingCallback,
+        g_upcall_table.lpWPUQuerySocketHandleContext,
+        g_upcall_table.lpWPUQueueApc,
+        g_upcall_table.lpWPUResetEvent,
+        g_upcall_table.lpWPUSetEvent,
+        g_upcall_table.lpWPUOpenCurrentThread2,
+        a->tbl
+    );
+    return 0;
+}
+
+/* =====================================================================
  * Provider DLL Loading
  * ===================================================================== */
 
@@ -650,31 +692,52 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     lsp_init_upcall_table();
     ERR("lsp_load_provider: BEFORE WSPStartup %s upcall=%p tbl=%p\n",
         debugstr_w(provider->info.szProtocol), &g_upcall_table, tbl);
-    /* This LSP uses a non-standard 19-param WSPStartup (ret $0x4c) where
-     * the WPUUPCALLTABLE is passed by value as 15 individual params.
-     * Param2 is a function pointer (unused, pass NULL). */
 
-    ret = wsp_startup_ex(
-        MAKEWORD(2, 2),            /* 1: wVersionRequested */
-        NULL,                       /* 2: reserved function ptr */
-        &provider->info,            /* 3: lpProtocolInfo */
-        g_upcall_table.lpWPUCloseEvent,              /* 4  */
-        g_upcall_table.lpWPUCloseSocketHandle,       /* 5  */
-        g_upcall_table.lpWPUCreateEvent,             /* 6  */
-        g_upcall_table.lpWPUTransmitFile,            /* 7  */
-        g_upcall_table.lpWPUFDIsSet,                 /* 8  */
-        g_upcall_table.lpWPUGetProviderPath,         /* 9  */
-        g_upcall_table.lpWPUModifyFSCloseHandle,     /* 10 */
-        g_upcall_table.lpWPUOpenCurrentThread,       /* 11 */
-        g_upcall_table.lpWPUPostMessage,             /* 12 */
-        g_upcall_table.lpWPUQueryBlockingCallback,   /* 13 */
-        g_upcall_table.lpWPUQuerySocketHandleContext, /* 14 */
-        g_upcall_table.lpWPUQueueApc,                /* 15 */
-        g_upcall_table.lpWPUResetEvent,              /* 16 */
-        g_upcall_table.lpWPUSetEvent,                /* 17 */
-        g_upcall_table.lpWPUOpenCurrentThread2,      /* 18 */
-        tbl                         /* 19: lpProcTable */
-    );
+    /* Call WSPStartup on a separate thread with 1 MB stack.
+     * SSLVPNRedirector.dll uses alloca(~4 KB) which overflows
+     * when called from deep stacks (e.g. Firefox). */
+    {
+        LSP_WSPSTARTUP_ARGS args;
+        HANDLE hThread;
+        DWORD tid;
+
+        args.wsp_startup_ex = wsp_startup_ex;
+        args.info = &provider->info;
+        args.tbl = tbl;
+        args.result = -1;
+
+        hThread = CreateThread(NULL, 0x100000, lsp_wspstartup_thread,
+                               &args, 0, &tid);
+        if (hThread)
+        {
+            ERR("lsp_load_provider: WSPStartup on thread %lu (1MB stack)\n", tid);
+            WaitForSingleObject(hThread, 30000);
+            CloseHandle(hThread);
+            ret = args.result;
+        }
+        else
+        {
+            ERR("lsp_load_provider: CreateThread failed, calling directly\n");
+            ret = wsp_startup_ex(
+                MAKEWORD(2, 2), NULL, &provider->info,
+                g_upcall_table.lpWPUCloseEvent,
+                g_upcall_table.lpWPUCloseSocketHandle,
+                g_upcall_table.lpWPUCreateEvent,
+                g_upcall_table.lpWPUTransmitFile,
+                g_upcall_table.lpWPUFDIsSet,
+                g_upcall_table.lpWPUGetProviderPath,
+                g_upcall_table.lpWPUModifyFSCloseHandle,
+                g_upcall_table.lpWPUOpenCurrentThread,
+                g_upcall_table.lpWPUPPostMessage,
+                g_upcall_table.lpWPUQueryBlockingCallback,
+                g_upcall_table.lpWPUQuerySocketHandleContext,
+                g_upcall_table.lpWPUQueueApc,
+                g_upcall_table.lpWPUResetEvent,
+                g_upcall_table.lpWPUSetEvent,
+                g_upcall_table.lpWPUOpenCurrentThread2,
+                tbl);
+        }
+    }
     ERR("lsp_load_provider: AFTER WSPStartup ret=%d\n", ret);
     g_loading = 0;
     if (ret != 0)
