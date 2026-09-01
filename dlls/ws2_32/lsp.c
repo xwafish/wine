@@ -663,6 +663,7 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
     LSP_WSPSTARTUP_FUNC_EX wsp_startup_ex;
     LPWSPPROC_TABLE tbl;
     int ret;
+    int wsp_errcode;
 
     ERR("lsp_load_provider: ENTER provider=%p dll_handle=%p\n", provider, provider ? provider->dll_handle : NULL);
 
@@ -729,6 +730,7 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
         HANDLE hThread;
         DWORD tid;
 
+        wsp_errcode = 0;
         args.wsp_startup_ex = wsp_startup_ex;
         args.info = &provider->info;
         args.tbl = tbl;
@@ -743,10 +745,10 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
             WaitForSingleObject(hThread, 30000);
             CloseHandle(hThread);
             ret = args.result;
+            wsp_errcode = args.errcode;
         }
         else
         {
-            int fallback_errcode = 0;
             ERR("lsp_load_provider: CreateThread failed, calling directly\n");
             ret = wsp_startup_ex(
                 MAKEWORD(2, 2), &provider->info,
@@ -765,11 +767,10 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
                 g_upcall_table.lpWPUResetEvent,
                 g_upcall_table.lpWPUSetEvent,
                 g_upcall_table.lpWPUOpenCurrentThread2,
-                tbl, &fallback_errcode);
-            args.errcode = fallback_errcode;
+                tbl, &wsp_errcode);
         }
     }
-    ERR("lsp_load_provider: AFTER WSPStartup ret=%d errcode=%d\n", ret, args.errcode);
+    ERR("lsp_load_provider: AFTER WSPStartup ret=%d errcode=%d\n", ret, wsp_errcode);
     g_loading = 0;
     if (ret != 0)
     {
