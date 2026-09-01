@@ -618,7 +618,7 @@ static void lsp_preload_providers(void)
  * ===================================================================== */
 typedef struct {
     LSP_WSPSTARTUP_FUNC_EX wsp_startup_ex;
-    WSAPROTOCOL_INFOW    *info;
+    LSP_SDK_WSAPROTOCOL_INFOW sdk_info;  /* SDK layout for WSPStartup */
     LPWSPPROC_TABLE       tbl;
     LSP_WSPDATA           wsp_data;
     int                   result;
@@ -629,19 +629,19 @@ static DWORD WINAPI lsp_wspstartup_thread(LPVOID arg)
     LSP_WSPSTARTUP_ARGS *a = (LSP_WSPSTARTUP_ARGS *)arg;
     void **uc = (void **)&g_upcall_table;
     int i;
-    ERR("WSPStartup calling with old WPUUPCALLTABLE order:\n");
+    ERR("WSPStartup calling with SDK-layout ProtocolInfo (ChainEntries[5]):\n");
     ERR("  p1 wVersion=%04x\n", MAKEWORD(2,2));
     ERR("  p2 lpWSPData=%p\n", &a->wsp_data);
     ERR("  p3 lpProtocolInfo=%p (af=%d type=%d proto=%d cl=%d)\n",
-        a->info, a->info->iAddressFamily, a->info->iSocketType,
-        a->info->iProtocol, a->info->ProtocolChain.ChainLen);
+        &a->sdk_info, a->sdk_info.iAddressFamily, a->sdk_info.iSocketType,
+        a->sdk_info.iProtocol, a->sdk_info.ProtocolChain.ChainLen);
     for (i = 0; i < 15; i++)
         ERR("  p%d-%d uc[%d]=%p\n", 4+i, 4+i, i, uc[i]);
     ERR("  p19 lpProcTable=%p\n", a->tbl);
     a->result = a->wsp_startup_ex(
         MAKEWORD(2, 2),
         &a->wsp_data,                              /* lpWSPData */
-        a->info,                                   /* lpProtocolInfo */
+        &a->sdk_info,                              /* SDK-layout ProtocolInfo */
         g_upcall_table.lpWPUCloseEvent,           /* uc0 */
         g_upcall_table.lpWPUCloseSocketHandle,    /* uc1 */
         g_upcall_table.lpWPUCreateEvent,          /* uc2 */
@@ -734,15 +734,22 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
 
     /* Call WSPStartup on a separate thread with 1 MB stack.
      * SSLVPNRedirector.dll uses alloca(~4 KB) which overflows
-     * when called from deep stacks (e.g. Firefox). */
+     * when called from deep stacks (e.g. Firefox).
+     *
+     * CRITICAL: Convert WSAPROTOCOL_INFOW from Wine layout (ChainEntries[7])
+     * to SDK layout (ChainEntries[5]) before passing to WSPStartup.
+     * LSP DLLs compiled with Windows SDK access fields at SDK offsets.
+     */
     {
         LSP_WSPSTARTUP_ARGS args;
+        LSP_SDK_WSAPROTOCOL_INFOW sdk_info;
         HANDLE hThread;
         DWORD tid;
 
         memset(&wsp_data, 0, sizeof(wsp_data));
+        lsp_convert_info_to_sdk(&provider->info, &sdk_info);
         args.wsp_startup_ex = wsp_startup_ex;
-        args.info = &provider->info;
+        args.sdk_info = sdk_info;
         args.tbl = tbl;
         memset(&args.wsp_data, 0, sizeof(args.wsp_data));
         args.result = -1;
@@ -761,7 +768,7 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
             ERR("lsp_load_provider: CreateThread failed, calling directly\n");
             memset(&wsp_data, 0, sizeof(wsp_data));
             ret = wsp_startup_ex(
-                MAKEWORD(2, 2), &wsp_data, &provider->info,
+                MAKEWORD(2, 2), &wsp_data, &sdk_info,
                 g_upcall_table.lpWPUCloseEvent,
                 g_upcall_table.lpWPUCloseSocketHandle,
                 g_upcall_table.lpWPUCreateEvent,

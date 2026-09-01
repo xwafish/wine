@@ -171,11 +171,92 @@ typedef int (WINAPI *LSP_WSPSTARTUP_FUNC_EX)(
     LPWSPPROC_TABLE lpProcTable
 );
 
+/* =====================================================================
+ * SDK-compatible WSAPROTOCOL_INFOW (ChainEntries[5])
+ *
+ * CRITICAL: Wine defines MAX_PROTOCOL_CHAIN=7 (ChainEntries[7]),
+ * but the Windows SDK defines MAX_PROTOCOL_CHAIN=5 (ChainEntries[5]).
+ * This makes Wine's WSAPROTOCOL_INFOW 8 bytes larger than the SDK version,
+ * shifting all fields after ProtocolChain by 8 bytes.
+ *
+ * LSP DLLs compiled with the Windows SDK access fields at SDK offsets.
+ * If we pass Wine's larger struct, the DLL reads wrong field values
+ * and returns ERROR_INVALID_PARAMETER (87).
+ *
+ * Fix: define an SDK-layout struct and convert before calling WSPStartup.
+ * ===================================================================== */
+
+#define LSP_SDK_MAX_PROTOCOL_CHAIN 5
+
+/* Inline copy of WSAPROTOCOLCHAIN with 5 entries (matching Windows SDK) */
+typedef struct _LSP_SDK_WSAPROTOCOLCHAIN
+{
+    int   ChainLen;
+    DWORD ChainEntries[LSP_SDK_MAX_PROTOCOL_CHAIN];
+} LSP_SDK_WSAPROTOCOLCHAIN;
+
+/* WSAPROTOCOL_INFOW with SDK-compatible layout (ChainEntries[5]) */
+typedef struct _LSP_SDK_WSAPROTOCOL_INFOW
+{
+    DWORD                    dwServiceFlags1;
+    DWORD                    dwServiceFlags2;
+    DWORD                    dwServiceFlags3;
+    DWORD                    dwServiceFlags4;
+    DWORD                    dwProviderFlags;
+    GUID                     ProviderId;
+    DWORD                    dwCatalogEntryId;
+    LSP_SDK_WSAPROTOCOLCHAIN ProtocolChain;
+    int                      iVersion;
+    int                      iAddressFamily;
+    int                      iMaxSockAddr;
+    int                      iMinSockAddr;
+    int                      iSocketType;
+    int                      iProtocol;
+    int                      iProtocolMaxOffset;
+    int                      iNetworkByteOrder;
+    int                      iSecurityScheme;
+    DWORD                    dwMessageSize;
+    DWORD                    dwProviderReserved;
+    WCHAR                    szProtocol[256 + 1];
+} LSP_SDK_WSAPROTOCOL_INFOW;
+
+/* Convert Wine WSAPROTOCOL_INFOW (ChainEntries[7]) to SDK layout (ChainEntries[5]).
+ * 'dst' must be >= sizeof(LSP_SDK_WSAPROTOCOL_INFOW) bytes. */
+static inline void lsp_convert_info_to_sdk(const WSAPROTOCOL_INFOW *src,
+                                           LSP_SDK_WSAPROTOCOL_INFOW *dst)
+{
+    int i;
+    dst->dwServiceFlags1 = src->dwServiceFlags1;
+    dst->dwServiceFlags2 = src->dwServiceFlags2;
+    dst->dwServiceFlags3 = src->dwServiceFlags3;
+    dst->dwServiceFlags4 = src->dwServiceFlags4;
+    dst->dwProviderFlags = src->dwProviderFlags;
+    dst->ProviderId = src->ProviderId;
+    dst->dwCatalogEntryId = src->dwCatalogEntryId;
+    dst->ProtocolChain.ChainLen = src->ProtocolChain.ChainLen;
+    for (i = 0; i < LSP_SDK_MAX_PROTOCOL_CHAIN && i < src->ProtocolChain.ChainLen; i++)
+        dst->ProtocolChain.ChainEntries[i] = src->ProtocolChain.ChainEntries[i];
+    for (; i < LSP_SDK_MAX_PROTOCOL_CHAIN; i++)
+        dst->ProtocolChain.ChainEntries[i] = 0;
+    dst->iVersion = src->iVersion;
+    dst->iAddressFamily = src->iAddressFamily;
+    dst->iMaxSockAddr = src->iMaxSockAddr;
+    dst->iMinSockAddr = src->iMinSockAddr;
+    dst->iSocketType = src->iSocketType;
+    dst->iProtocol = src->iProtocol;
+    dst->iProtocolMaxOffset = src->iProtocolMaxOffset;
+    dst->iNetworkByteOrder = src->iNetworkByteOrder;
+    dst->iSecurityScheme = src->iSecurityScheme;
+    dst->dwMessageSize = src->dwMessageSize;
+    dst->dwProviderReserved = src->dwProviderReserved;
+    memcpy(dst->szProtocol, src->szProtocol, sizeof(dst->szProtocol));
+}
+
 /* Provider catalog entry */
 typedef struct _LSP_PROVIDER_ENTRY
 {
     struct list           entry;
-    WSAPROTOCOL_INFOW     info;
+    WSAPROTOCOL_INFOW     info;           /* Wine layout (ChainEntries[7]) */
     WCHAR                 dll_path[MAX_PATH];
     HMODULE               dll_handle;
     LPWSPPROC_TABLE       proc_table;
