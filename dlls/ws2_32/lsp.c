@@ -622,6 +622,7 @@ typedef struct {
     LSP_WSPSTARTUP_FUNC_EX wsp_startup_ex;
     WSAPROTOCOL_INFOW    *info;
     LPWSPPROC_TABLE       tbl;
+    int                   errcode;
     int                   result;
 } LSP_WSPSTARTUP_ARGS;
 
@@ -630,7 +631,6 @@ static DWORD WINAPI lsp_wspstartup_thread(LPVOID arg)
     LSP_WSPSTARTUP_ARGS *a = (LSP_WSPSTARTUP_ARGS *)arg;
     a->result = a->wsp_startup_ex(
         MAKEWORD(2, 2),
-        NULL,
         a->info,
         g_upcall_table.lpWPUCloseEvent,
         g_upcall_table.lpWPUCloseSocketHandle,
@@ -647,7 +647,8 @@ static DWORD WINAPI lsp_wspstartup_thread(LPVOID arg)
         g_upcall_table.lpWPUResetEvent,
         g_upcall_table.lpWPUSetEvent,
         g_upcall_table.lpWPUOpenCurrentThread2,
-        a->tbl
+        a->tbl,
+        &a->errcode
     );
     return 0;
 }
@@ -731,6 +732,7 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
         args.wsp_startup_ex = wsp_startup_ex;
         args.info = &provider->info;
         args.tbl = tbl;
+        args.errcode = 0;
         args.result = -1;
 
         hThread = CreateThread(NULL, 0x100000, lsp_wspstartup_thread,
@@ -744,9 +746,10 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
         }
         else
         {
+            int fallback_errcode = 0;
             ERR("lsp_load_provider: CreateThread failed, calling directly\n");
             ret = wsp_startup_ex(
-                MAKEWORD(2, 2), NULL, &provider->info,
+                MAKEWORD(2, 2), &provider->info,
                 g_upcall_table.lpWPUCloseEvent,
                 g_upcall_table.lpWPUCloseSocketHandle,
                 g_upcall_table.lpWPUCreateEvent,
@@ -762,10 +765,11 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
                 g_upcall_table.lpWPUResetEvent,
                 g_upcall_table.lpWPUSetEvent,
                 g_upcall_table.lpWPUOpenCurrentThread2,
-                tbl);
+                tbl, &fallback_errcode);
+            args.errcode = fallback_errcode;
         }
     }
-    ERR("lsp_load_provider: AFTER WSPStartup ret=%d\n", ret);
+    ERR("lsp_load_provider: AFTER WSPStartup ret=%d errcode=%d\n", ret, args.errcode);
     g_loading = 0;
     if (ret != 0)
     {

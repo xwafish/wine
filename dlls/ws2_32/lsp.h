@@ -119,17 +119,25 @@ typedef int (WINAPI *LSP_WSPSTARTUP_FUNC)(
 );
 
 /* Extended WSPStartup: 19 params, stdcall ret $0x4c
- * Some LSP SDKs expand WPUUPCALLTABLE by value.
- * Param2 is a function pointer (next provider entry point).
- * Params 4-18 are the 15 upcall table entries. */
+ *
+ * Standard SDK expansion of WPUUPCALLTABLE by value:
+ *   Param1: wVersionRequested
+ *   Param2: lpProtocolInfo (NOT pfnNext!)
+ *   Param3-17: 15 upcall table entries (expanded)
+ *   Param18: lpProcTable
+ *   Param19: lpErrno
+ *
+ * The previous assumption that param2 was pfnNext caused
+ * ERROR_INVALID_PARAMETER (87) because the DLL received
+ * NULL as lpProtocolInfo. */
 typedef int (WINAPI *LSP_WSPSTARTUP_FUNC_EX)(
     WORD wVersionRequested,
-    void *pfnNext,                /* function pointer */
     LPWSAPROTOCOL_INFOW lpProtocolInfo,
     void *uc0,  void *uc1,  void *uc2,  void *uc3,  void *uc4,
     void *uc5,  void *uc6,  void *uc7,  void *uc8,  void *uc9,
     void *uc10, void *uc11, void *uc12, void *uc13, void *uc14,
-    LPWSPPROC_TABLE lpProcTable
+    LPWSPPROC_TABLE lpProcTable,
+    int *lpErrno
 );
 
 /* Provider catalog entry */
