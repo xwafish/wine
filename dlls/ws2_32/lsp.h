@@ -85,31 +85,40 @@ typedef struct _WSPPROC_TABLE
 } WSPPROC_TABLE, *LPWSPPROC_TABLE;
 
 /* ======================================================================
- * WSPUPCALLTABLE - 15 upcall callbacks (0..14)
- * Passed BY VALUE (not pointer) in WSPStartup.
- * Layout must match Windows SDK ws2spi.h WSPUPCALLTABLE EXACTLY.
+ * Upcall table - 15 entries passed BY VALUE in WSPStartup.
  *
- * NOTE: This is WSPUPCALLTABLE (used in WSPStartup), NOT WPUUPCALLTABLE.
- * The two have DIFFERENT entry orders and members!
+ * There are TWO different upcall table layouts in Windows SDK history:
+ *
+ * 1) WPUUPCALLTABLE (old SDK, e.g. Platform SDK / Win7 SDK):
+ *      Used by older LSP DLLs compiled with pre-Win10 headers.
+ *      Has WPUCreateThread, WPUDisableBlockingHook, WPUModifyFSCloseHandle.
+ *
+ * 2) WSPUPCALLTABLE (Windows 10 SDK 10.0.16299.0+):
+ *      Renamed from WPUUPCALLTABLE, reordered, added WPUCreateSocketHandle,
+ *      WPUModifyIFSHandle, WPUCloseThread.  Removed WPUCreateThread,
+ *      WPUDisableBlockingHook, WPUModifyFSCloseHandle.
+ *
+ * We use the OLD WPUUPCALLTABLE order since commercial LSP DLLs
+ * (e.g. SSLVPNRedirector.dll) are typically compiled with older SDKs.
  * ===================================================================== */
-typedef struct _WSPUPCALLTABLE
+typedef struct _WPUUPCALLTABLE
 {
     void *lpWPUCloseEvent;              /* 0  */
     void *lpWPUCloseSocketHandle;       /* 1  */
     void *lpWPUCreateEvent;             /* 2  */
-    void *lpWPUCreateSocketHandle;      /* 3  */
-    void *lpWPUFDIsSet;                 /* 4  */
-    void *lpWPUGetProviderPath;         /* 5  */
-    void *lpWPUModifyIFSHandle;         /* 6  */
-    void *lpWPUPostMessage;             /* 7  */
-    void *lpWPUQueryBlockingCallback;   /* 8  */
-    void *lpWPUQuerySocketHandleContext;/* 9  */
-    void *lpWPUQueueApc;                /* 10 */
-    void *lpWPUResetEvent;              /* 11 */
-    void *lpWPUSetEvent;                /* 12 */
-    void *lpWPUOpenCurrentThread;       /* 13 */
-    void *lpWPUCloseThread;             /* 14 */
-} WSPUPCALLTABLE, *LPWSPUPCALLTABLE;
+    void *lpWPUCreateThread;            /* 3  - old SDK */
+    void *lpWPUDisableBlockingHook;    /* 4  - old SDK */
+    void *lpWPUFDIsSet;                 /* 5  */
+    void *lpWPUGetProviderPath;         /* 6  */
+    void *lpWPUModifyFSCloseHandle;     /* 7  - old SDK */
+    void *lpWPUOpenCurrentThread;       /* 8  */
+    void *lpWPUPostMessage;             /* 9  */
+    void *lpWPUQueryBlockingCallback;   /* 10 */
+    void *lpWPUQuerySocketHandleContext;/* 11 */
+    void *lpWPUQueueApc;                /* 12 */
+    void *lpWPUResetEvent;              /* 13 */
+    void *lpWPUSetEvent;                /* 14 */
+} WPUUPCALLTABLE, *LPWPUUPCALLTABLE;
 
 /* WSP function signatures - for casting void* from WSPPROC_TABLE */
 
@@ -117,37 +126,39 @@ typedef SOCKET (WINAPI *LSP_WSPSOCKET_FUNC)( int, int, int, LPWSAPROTOCOL_INFOW,
 typedef int (WINAPI *LSP_WSPCONNECT_FUNC)( SOCKET, const struct sockaddr *, int, LPWSABUF, LPWSABUF, LPQOS, LPQOS );
 
 /* ======================================================================
- * WSPStartup entry point - TWO signatures supported
+ * WSPStartup entry point signatures
  *
- * 1) Standard (ret $0x14): 5 logical params
- * 2) Extended 19-param (ret $0x4c): WSPUPCALLTABLE expanded by value
+ * The DLL has ret $0x4c (76 bytes = 19 DWORDs), confirming 19 params.
  *
- * Windows SDK WSPStartup signature:
- *   int WSPStartup(WORD wVersionRequested,
- *                   LPWSPDATA lpWSPData,
- *                   LPWSAPROTOCOL_INFOW lpProtocolInfo,
- *                   WSPUPCALLTABLE UpcallTable,   // BY VALUE!
- *                   LPWSPPROC_TABLE lpProcTable);
+ * TWO possible 19-param layouts exist depending on SDK version:
  *
- * When WSPUPCALLTABLE is expanded by value (15 entries),
- * total = 1 + 1 + 1 + 15 + 1 = 19 params = 76 bytes = $0x4c.
+ * Layout A (Win10 SDK WSPUPCALLTABLE, 19 params):
+ *   wVersion, lpWSPData, lpProtocolInfo, 15 upcalls, lpProcTable
+ *
+ * Layout B (old SDK WPUUPCALLTABLE, 19 params):
+ *   wVersion, lpProtocolInfo, 15 upcalls, lpProcTable, lpErrno
+ *
+ * Layout A was tried and returned 87.  Layout B was tried before the
+ * 1MB stack fix (unreliable).  We now try Layout A with the OLD
+ * WPUUPCALLTABLE upcall order (different member positions 3-14).
  * ===================================================================== */
 
-/* Standard WSPStartup: 5 logical params */
+/* Standard WSPStartup: 5 logical params (for reference) */
 typedef int (WINAPI *LSP_WSPSTARTUP_FUNC)(
     WORD wVersionRequested,
     LSP_LPWSPDATA lpWSPData,
     LPWSAPROTOCOL_INFOW lpProtocolInfo,
-    LPWSPUPCALLTABLE lpUpcallTable,
+    LPWPUUPCALLTABLE lpUpcallTable,
     LPWSPPROC_TABLE lpProcTable
 );
 
-/* Extended WSPStartup: 19 params (WSPUPCALLTABLE expanded by value)
+/* Extended WSPStartup: 19 params (upcall table expanded by value)
  *
+ * Layout A (Win10 SDK, with lpWSPData):
  *   Param1:  wVersionRequested
- *   Param2:  lpWSPData              (WSPDATA pointer)
+ *   Param2:  lpWSPData
  *   Param3:  lpProtocolInfo
- *   Param4-18: 15 WSPUPCALLTABLE entries (expanded)
+ *   Param4-18: 15 upcall entries (WPUUPCALLTABLE order)
  *   Param19: lpProcTable
  */
 typedef int (WINAPI *LSP_WSPSTARTUP_FUNC_EX)(
