@@ -30,69 +30,79 @@ typedef enum _WSC_PROVIDER_INFO_TYPE
 #define LSP_BASE_CATALOG_ENTRY_ID 2001
 
 /* ======================================================================
- * Standard WSPPROC_TABLE - 35 WSP function slots (0..34)
- * Filled by LSP DLL during WSPStartup.  Layout must match ws2spi.h.
+ * Standard WSPPROC_TABLE - 33 WSP function slots (0..32)
+ * Filled by LSP DLL during WSPStartup.
+ * Layout must match Windows SDK ws2spi.h EXACTLY.
+ *
+ * Previous version had 2 extra Vista+ entries (lpWSPAbsorbRecv/From)
+ * at indices 0-1, shifting all WSP offsets by 2.  The DLL writes
+ * lpWSPAccept at offset 0 per SDK, so our struct must start there.
  * ===================================================================== */
 typedef struct _WSPPROC_TABLE
 {
-    void *lpWSPAbsorbRecv;          /* 0  */
-    void *lpWSPAbsorbRecvFrom;      /* 1  */
-    void *lpWSPAccept;              /* 2  */
-    void *lpWSPAddressToString;     /* 3  */
-    void *lpWSPAsyncSelect;         /* 4  */
-    void *lpWSPBind;                /* 5  */
-    void *lpWSPCancelBlockingCall;  /* 6  */
-    void *lpWSPCleanup;             /* 7  */
-    void *lpWSPCloseSocket;         /* 8  */
-    void *lpWSPConnect;             /* 9  - CRITICAL */
-    void *lpWSPConnectListen;       /* 10 */
-    void *lpWSPDatagramRecv;        /* 11 */
-    void *lpWSPDatagramSend;        /* 12 */
-    void *lpWSPDuplicateSocket;     /* 13 */
-    void *lpWSPEnumNetworkEvents;   /* 14 */
-    void *lpWSPEventSelect;         /* 15 */
-    void *lpWSPGetOverlappedResult; /* 16 */
-    void *lpWSPGetPeerName;         /* 17 */
-    void *lpWSPGetQOSByName;        /* 18 */
-    void *lpWSPGetSockName;         /* 19 */
-    void *lpWSPGetSockOpt;          /* 20 */
-    void *lpWSPIoctl;               /* 21 */
-    void *lpWSPJoinLeaf;            /* 22 */
-    void *lpWSPListen;              /* 23 */
-    void *lpWSPRecv;                /* 24 */
-    void *lpWSPRecvDisconnect;      /* 25 */
-    void *lpWSPRecvFrom;            /* 26 */
-    void *lpWSPSelect;              /* 27 */
-    void *lpWSPSend;                /* 28 */
-    void *lpWSPSendDisconnect;      /* 29 */
-    void *lpWSPSendTo;              /* 30 */
-    void *lpWSPSetSockOpt;          /* 31 */
-    void *lpWSPShutdown;            /* 32 */
-    void *lpWSPSocket;              /* 33 - CRITICAL */
-    void *lpWSPStringToAddress;     /* 34 */
+    void *lpWSPAccept;              /* 0  */
+    void *lpWSPAddressToString;     /* 1  */
+    void *lpWSPAsyncSelect;         /* 2  */
+    void *lpWSPBind;                /* 3  */
+    void *lpWSPCancelBlockingCall;  /* 4  */
+    void *lpWSPCleanup;             /* 5  */
+    void *lpWSPCloseSocket;         /* 6  */
+    void *lpWSPConnect;             /* 7  - CRITICAL */
+    void *lpWSPConnectListen;       /* 8  */
+    void *lpWSPDatagramRecv;        /* 9  */
+    void *lpWSPDatagramSend;        /* 10 */
+    void *lpWSPDuplicateSocket;     /* 11 */
+    void *lpWSPEnumNetworkEvents;   /* 12 */
+    void *lpWSPEventSelect;         /* 13 */
+    void *lpWSPGetOverlappedResult; /* 14 */
+    void *lpWSPGetPeerName;         /* 15 */
+    void *lpWSPGetQOSByName;        /* 16 */
+    void *lpWSPGetSockName;         /* 17 */
+    void *lpWSPGetSockOpt;          /* 18 */
+    void *lpWSPIoctl;               /* 19 */
+    void *lpWSPJoinLeaf;            /* 20 */
+    void *lpWSPListen;              /* 21 */
+    void *lpWSPRecv;                /* 22 */
+    void *lpWSPRecvDisconnect;      /* 23 */
+    void *lpWSPRecvFrom;            /* 24 */
+    void *lpWSPSelect;              /* 25 */
+    void *lpWSPSend;                /* 26 */
+    void *lpWSPSendDisconnect;      /* 27 */
+    void *lpWSPSendTo;              /* 28 */
+    void *lpWSPSetSockOpt;          /* 29 */
+    void *lpWSPShutdown;            /* 30 */
+    void *lpWSPSocket;              /* 31 - CRITICAL */
+    void *lpWSPStringToAddress;     /* 32 */
 } WSPPROC_TABLE, *LPWSPPROC_TABLE;
 
 /* ======================================================================
  * WPU Upcall Table - 15 callbacks (0..14)
- * Layout must match Windows SDK ws2spi.h exactly.
+ * Layout must match Windows SDK ws2spi.h EXACTLY.
+ *
+ * Previous version had wrong entries from index 3 onwards:
+ *   index 3 was lpWPUTransmitFile (NOT in WPUUPCALLTABLE!)
+ *   index 4 was lpWPUFDIsSet (should be index 5)
+ * This caused ALL 12 upcall pointers from param6 onwards to be
+ * at wrong positions in the 19-param WSPStartup call, resulting
+ * in ERROR_INVALID_PARAMETER (87) from SSLVPNRedirector.dll.
  * ===================================================================== */
 typedef struct _WPUUPCALLTABLE
 {
     void *lpWPUCloseEvent;              /* 0  */
     void *lpWPUCloseSocketHandle;       /* 1  */
     void *lpWPUCreateEvent;             /* 2  */
-    void *lpWPUTransmitFile;            /* 3  */
-    void *lpWPUFDIsSet;                 /* 4  */
-    void *lpWPUGetProviderPath;         /* 5  */
-    void *lpWPUModifyFSCloseHandle;     /* 6  */
-    void *lpWPUOpenCurrentThread;       /* 7  */
-    void *lpWPUPostMessage;             /* 8  */
-    void *lpWPUQueryBlockingCallback;   /* 9  */
-    void *lpWPUQuerySocketHandleContext;/* 10 */
-    void *lpWPUQueueApc;                /* 11 */
-    void *lpWPUResetEvent;              /* 12 */
-    void *lpWPUSetEvent;                /* 13 */
-    void *lpWPUOpenCurrentThread2;      /* 14 (Vista+) */
+    void *lpWPUCreateThread;            /* 3  */
+    void *lpWPUDisableBlockingHook;     /* 4  */
+    void *lpWPUFDIsSet;                 /* 5  */
+    void *lpWPUGetProviderPath;         /* 6  */
+    void *lpWPUModifyFSCloseHandle;     /* 7  */
+    void *lpWPUOpenCurrentThread;       /* 8  */
+    void *lpWPUPostMessage;             /* 9  */
+    void *lpWPUQueryBlockingCallback;   /* 10 */
+    void *lpWPUQuerySocketHandleContext;/* 11 */
+    void *lpWPUQueueApc;                /* 12 */
+    void *lpWPUResetEvent;              /* 13 */
+    void *lpWPUSetEvent;                /* 14 */
 } WPUUPCALLTABLE, *LPWPUUPCALLTABLE;
 
 /* WSP function signatures - for casting void* from WSPPROC_TABLE */

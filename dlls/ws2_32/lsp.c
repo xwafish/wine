@@ -448,18 +448,6 @@ static int WINAPI wpu_OpenCurrentThread(WSP_THREAD_ID *lpThreadId, int *lpErrno)
     return 0;
 }
 
-static int WINAPI wpu_OpenCurrentThread2(WSP_THREAD_ID *lpThreadId, int *lpErrno)
-{
-    return wpu_OpenCurrentThread(lpThreadId, lpErrno);
-}
-
-/* wpu_CloseThread - not in standard WPUUPCALLTABLE but kept as reference */
-static int WINAPI __attribute__((unused)) wpu_CloseThread(WSP_THREAD_ID ThreadId, int *lpErrno)
-{
-    (void)ThreadId; (void)lpErrno;
-    return 0;
-}
-
 static int WINAPI wpu_GetProviderPath(GUID *lpProviderId, WCHAR *path,
                                       int *pathLen, int *lpErrno)
 {
@@ -488,18 +476,6 @@ static BOOL WINAPI wpu_PostMessage(HWND hWnd, UINT Msg, WPARAM wParam,
                                     LPARAM lParam, int *lpErrno)
 {
     return PostMessageW(hWnd, Msg, wParam, lParam);
-}
-
-static HANDLE WINAPI __attribute__((unused)) wpu_CreateThread(WSP_THREAD_ID *lpThreadId,
-                                        LPTHREAD_START_ROUTINE lpfn,
-                                        void *param, DWORD flags, int *lpErrno)
-{
-    DWORD tid;
-    HANDLE h = CreateThread(NULL, 0, lpfn, param, flags, &tid);
-    if (!h) { if (lpErrno) *lpErrno = (int)GetLastError(); return NULL; }
-    if (lpThreadId) { lpThreadId->ThreadHandle = h; lpThreadId->Reserved = tid; }
-    TRACE("WPU: CreateThread -> %p tid=%lu\n", h, tid);
-    return h;
 }
 
 static int WINAPI wpu_QueueApc(WSP_THREAD_ID *lpThreadId, void *lpfnApc,
@@ -537,16 +513,26 @@ static int WINAPI wpu_ModifyFSCloseHandle(int *lpErrno)
     return 0;
 }
 
-/* WPUTransmitFile - index 3 in standard upcall table.
- * Stub: not supported in Wine LSP layer. */
-static BOOL WINAPI wpu_TransmitFile(SOCKET s, HANDLE hFile,
-                                     DWORD nBytes, DWORD nPerSend,
-                                     LPWSAOVERLAPPED lpov,
-                                     void *lpCompRout, DWORD dwFlags,
-                                     int *lpErrno)
+/* wpu_CreateThread - index 3 in WPUUPCALLTABLE (Windows SDK ws2spi.h).
+ * Was incorrectly marked unused; now used. */
+static HANDLE WINAPI wpu_CreateThread(WSP_THREAD_ID *lpThreadId,
+                                        LPTHREAD_START_ROUTINE lpfn,
+                                        void *param, DWORD flags, int *lpErrno)
+{
+    DWORD tid;
+    HANDLE h = CreateThread(NULL, 0, lpfn, param, flags, &tid);
+    if (!h) { if (lpErrno) *lpErrno = (int)GetLastError(); return NULL; }
+    if (lpThreadId) { lpThreadId->ThreadHandle = h; lpThreadId->Reserved = tid; }
+    TRACE("WPU: CreateThread -> %p tid=%lu\n", h, tid);
+    return h;
+}
+
+/* wpu_DisableBlockingHook - index 4 in WPUUPCALLTABLE.
+ * Disables any installed blocking hook. */
+static int WINAPI wpu_DisableBlockingHook(int *lpErrno)
 {
     if (lpErrno) *lpErrno = WSAEOPNOTSUPP;
-    return FALSE;
+    return SOCKET_ERROR;
 }
 
 /* Global upcall table instance */
@@ -556,23 +542,26 @@ static BOOL g_upcall_inited = FALSE;
 static void lsp_init_upcall_table(void)
 {
     if (g_upcall_inited) return;
-    g_upcall_table.lpWPUCloseEvent              = wpu_CloseEvent;
-    g_upcall_table.lpWPUCloseSocketHandle       = wpu_CloseSocketHandle;
-    g_upcall_table.lpWPUCreateEvent             = wpu_CreateEvent;
-    g_upcall_table.lpWPUTransmitFile            = wpu_TransmitFile;
-    g_upcall_table.lpWPUFDIsSet                 = wpu_FDIsSet;
-    g_upcall_table.lpWPUGetProviderPath         = wpu_GetProviderPath;
-    g_upcall_table.lpWPUModifyFSCloseHandle     = wpu_ModifyFSCloseHandle;
-    g_upcall_table.lpWPUOpenCurrentThread       = wpu_OpenCurrentThread;
-    g_upcall_table.lpWPUPostMessage             = wpu_PostMessage;
-    g_upcall_table.lpWPUQueryBlockingCallback   = wpu_QueryBlockingCallback;
-    g_upcall_table.lpWPUQuerySocketHandleContext = wpu_QuerySocketHandleContext;
-    g_upcall_table.lpWPUQueueApc                = wpu_QueueApc;
-    g_upcall_table.lpWPUResetEvent              = wpu_ResetEvent;
-    g_upcall_table.lpWPUSetEvent                = wpu_SetEvent;
-    g_upcall_table.lpWPUOpenCurrentThread2      = wpu_OpenCurrentThread2;
+    /* Order MUST match Windows SDK ws2spi.h WPUUPCALLTABLE exactly.
+     * Previous version was wrong from index 3 onwards (had
+     * lpWPUTransmitFile instead of lpWPUCreateThread, etc.) */
+    g_upcall_table.lpWPUCloseEvent              = wpu_CloseEvent;           /* 0 */
+    g_upcall_table.lpWPUCloseSocketHandle       = wpu_CloseSocketHandle;    /* 1 */
+    g_upcall_table.lpWPUCreateEvent             = wpu_CreateEvent;          /* 2 */
+    g_upcall_table.lpWPUCreateThread            = wpu_CreateThread;         /* 3 */
+    g_upcall_table.lpWPUDisableBlockingHook     = wpu_DisableBlockingHook;  /* 4 */
+    g_upcall_table.lpWPUFDIsSet                 = wpu_FDIsSet;              /* 5 */
+    g_upcall_table.lpWPUGetProviderPath         = wpu_GetProviderPath;      /* 6 */
+    g_upcall_table.lpWPUModifyFSCloseHandle     = wpu_ModifyFSCloseHandle;  /* 7 */
+    g_upcall_table.lpWPUOpenCurrentThread       = wpu_OpenCurrentThread;    /* 8 */
+    g_upcall_table.lpWPUPostMessage             = wpu_PostMessage;          /* 9 */
+    g_upcall_table.lpWPUQueryBlockingCallback   = wpu_QueryBlockingCallback;/* 10 */
+    g_upcall_table.lpWPUQuerySocketHandleContext = wpu_QuerySocketHandleContext; /* 11 */
+    g_upcall_table.lpWPUQueueApc                = wpu_QueueApc;             /* 12 */
+    g_upcall_table.lpWPUResetEvent              = wpu_ResetEvent;           /* 13 */
+    g_upcall_table.lpWPUSetEvent                = wpu_SetEvent;             /* 14 */
     g_upcall_inited = TRUE;
-    TRACE("WPU upcall table initialized (15 entries, std layout)\n");
+    TRACE("WPU upcall table initialized (15 entries, SDK layout)\n");
 }
 
 /* =====================================================================
@@ -632,21 +621,21 @@ static DWORD WINAPI lsp_wspstartup_thread(LPVOID arg)
     a->result = a->wsp_startup_ex(
         MAKEWORD(2, 2),
         a->info,
-        g_upcall_table.lpWPUCloseEvent,
-        g_upcall_table.lpWPUCloseSocketHandle,
-        g_upcall_table.lpWPUCreateEvent,
-        g_upcall_table.lpWPUTransmitFile,
-        g_upcall_table.lpWPUFDIsSet,
-        g_upcall_table.lpWPUGetProviderPath,
-        g_upcall_table.lpWPUModifyFSCloseHandle,
-        g_upcall_table.lpWPUOpenCurrentThread,
-        g_upcall_table.lpWPUPostMessage,
-        g_upcall_table.lpWPUQueryBlockingCallback,
-        g_upcall_table.lpWPUQuerySocketHandleContext,
-        g_upcall_table.lpWPUQueueApc,
-        g_upcall_table.lpWPUResetEvent,
-        g_upcall_table.lpWPUSetEvent,
-        g_upcall_table.lpWPUOpenCurrentThread2,
+        g_upcall_table.lpWPUCloseEvent,           /* uc0 */
+        g_upcall_table.lpWPUCloseSocketHandle,    /* uc1 */
+        g_upcall_table.lpWPUCreateEvent,          /* uc2 */
+        g_upcall_table.lpWPUCreateThread,         /* uc3 */
+        g_upcall_table.lpWPUDisableBlockingHook,  /* uc4 */
+        g_upcall_table.lpWPUFDIsSet,              /* uc5 */
+        g_upcall_table.lpWPUGetProviderPath,      /* uc6 */
+        g_upcall_table.lpWPUModifyFSCloseHandle,  /* uc7 */
+        g_upcall_table.lpWPUOpenCurrentThread,    /* uc8 */
+        g_upcall_table.lpWPUPostMessage,          /* uc9 */
+        g_upcall_table.lpWPUQueryBlockingCallback,/* uc10 */
+        g_upcall_table.lpWPUQuerySocketHandleContext, /* uc11 */
+        g_upcall_table.lpWPUQueueApc,             /* uc12 */
+        g_upcall_table.lpWPUResetEvent,           /* uc13 */
+        g_upcall_table.lpWPUSetEvent,             /* uc14 */
         a->tbl,
         &a->errcode
     );
@@ -755,7 +744,8 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
                 g_upcall_table.lpWPUCloseEvent,
                 g_upcall_table.lpWPUCloseSocketHandle,
                 g_upcall_table.lpWPUCreateEvent,
-                g_upcall_table.lpWPUTransmitFile,
+                g_upcall_table.lpWPUCreateThread,
+                g_upcall_table.lpWPUDisableBlockingHook,
                 g_upcall_table.lpWPUFDIsSet,
                 g_upcall_table.lpWPUGetProviderPath,
                 g_upcall_table.lpWPUModifyFSCloseHandle,
@@ -766,7 +756,6 @@ int lsp_load_provider(LSP_PROVIDER_ENTRY *provider)
                 g_upcall_table.lpWPUQueueApc,
                 g_upcall_table.lpWPUResetEvent,
                 g_upcall_table.lpWPUSetEvent,
-                g_upcall_table.lpWPUOpenCurrentThread2,
                 tbl, &wsp_errcode);
         }
     }
