@@ -3,6 +3,9 @@
  *
  * Compatible with Wine 10.14 (release-10.14 branch)
  * Included by protocol_lsp.c and socket.c after ws2_32_private.h.
+ *
+ * All struct layouts MUST match Windows SDK ws2spi.h EXACTLY.
+ * Reference: https://github.com/tpn/winsdk-10/blob/master/Include/10.0.16299.0/um/WS2spi.h
  */
 #ifndef __WINE_WS2_32_LSP_H
 #define __WINE_WS2_32_LSP_H
@@ -30,13 +33,22 @@ typedef enum _WSC_PROVIDER_INFO_TYPE
 #define LSP_BASE_CATALOG_ENTRY_ID 2001
 
 /* ======================================================================
- * Standard WSPPROC_TABLE - 33 WSP function slots (0..32)
+ * WSPDATA - returned by WSPStartup to negotiate version.
+ * Reference: ws2spi.h typedef struct WSPData
+ * ===================================================================== */
+#define WSPDESCRIPTION_LEN 255
+
+typedef struct _LSP_WSPDATA
+{
+    WORD  wVersion;
+    WORD  wHighVersion;
+    WCHAR szDescription[WSPDESCRIPTION_LEN + 1];
+} LSP_WSPDATA, *LSP_LPWSPDATA;
+
+/* ======================================================================
+ * WSPPROC_TABLE - 30 WSP function slots (0..29)
  * Filled by LSP DLL during WSPStartup.
  * Layout must match Windows SDK ws2spi.h EXACTLY.
- *
- * Previous version had 2 extra Vista+ entries (lpWSPAbsorbRecv/From)
- * at indices 0-1, shifting all WSP offsets by 2.  The DLL writes
- * lpWSPAccept at offset 0 per SDK, so our struct must start there.
  * ===================================================================== */
 typedef struct _WSPPROC_TABLE
 {
@@ -48,62 +60,56 @@ typedef struct _WSPPROC_TABLE
     void *lpWSPCleanup;             /* 5  */
     void *lpWSPCloseSocket;         /* 6  */
     void *lpWSPConnect;             /* 7  - CRITICAL */
-    void *lpWSPConnectListen;       /* 8  */
-    void *lpWSPDatagramRecv;        /* 9  */
-    void *lpWSPDatagramSend;        /* 10 */
-    void *lpWSPDuplicateSocket;     /* 11 */
-    void *lpWSPEnumNetworkEvents;   /* 12 */
-    void *lpWSPEventSelect;         /* 13 */
-    void *lpWSPGetOverlappedResult; /* 14 */
-    void *lpWSPGetPeerName;         /* 15 */
-    void *lpWSPGetQOSByName;        /* 16 */
-    void *lpWSPGetSockName;         /* 17 */
-    void *lpWSPGetSockOpt;          /* 18 */
-    void *lpWSPIoctl;               /* 19 */
-    void *lpWSPJoinLeaf;            /* 20 */
-    void *lpWSPListen;              /* 21 */
-    void *lpWSPRecv;                /* 22 */
-    void *lpWSPRecvDisconnect;      /* 23 */
-    void *lpWSPRecvFrom;            /* 24 */
-    void *lpWSPSelect;              /* 25 */
-    void *lpWSPSend;                /* 26 */
-    void *lpWSPSendDisconnect;      /* 27 */
-    void *lpWSPSendTo;              /* 28 */
-    void *lpWSPSetSockOpt;          /* 29 */
-    void *lpWSPShutdown;            /* 30 */
-    void *lpWSPSocket;              /* 31 - CRITICAL */
-    void *lpWSPStringToAddress;     /* 32 */
+    void *lpWSPDuplicateSocket;     /* 8  */
+    void *lpWSPEnumNetworkEvents;   /* 9  */
+    void *lpWSPEventSelect;         /* 10 */
+    void *lpWSPGetOverlappedResult; /* 11 */
+    void *lpWSPGetPeerName;         /* 12 */
+    void *lpWSPGetSockName;         /* 13 */
+    void *lpWSPGetSockOpt;          /* 14 */
+    void *lpWSPGetQOSByName;        /* 15 */
+    void *lpWSPIoctl;               /* 16 */
+    void *lpWSPJoinLeaf;            /* 17 */
+    void *lpWSPListen;              /* 18 */
+    void *lpWSPRecv;                /* 19 */
+    void *lpWSPRecvDisconnect;      /* 20 */
+    void *lpWSPRecvFrom;            /* 21 */
+    void *lpWSPSelect;              /* 22 */
+    void *lpWSPSend;                /* 23 */
+    void *lpWSPSendDisconnect;      /* 24 */
+    void *lpWSPSendTo;              /* 25 */
+    void *lpWSPSetSockOpt;          /* 26 */
+    void *lpWSPShutdown;            /* 27 */
+    void *lpWSPSocket;              /* 28 - CRITICAL */
+    void *lpWSPStringToAddress;     /* 29 */
 } WSPPROC_TABLE, *LPWSPPROC_TABLE;
 
 /* ======================================================================
- * WPU Upcall Table - 15 callbacks (0..14)
- * Layout must match Windows SDK ws2spi.h EXACTLY.
+ * WSPUPCALLTABLE - 15 upcall callbacks (0..14)
+ * Passed BY VALUE (not pointer) in WSPStartup.
+ * Layout must match Windows SDK ws2spi.h WSPUPCALLTABLE EXACTLY.
  *
- * Previous version had wrong entries from index 3 onwards:
- *   index 3 was lpWPUTransmitFile (NOT in WPUUPCALLTABLE!)
- *   index 4 was lpWPUFDIsSet (should be index 5)
- * This caused ALL 12 upcall pointers from param6 onwards to be
- * at wrong positions in the 19-param WSPStartup call, resulting
- * in ERROR_INVALID_PARAMETER (87) from SSLVPNRedirector.dll.
+ * NOTE: This is WSPUPCALLTABLE (used in WSPStartup), NOT WPUUPCALLTABLE.
+ * The two have DIFFERENT entry orders and members!
  * ===================================================================== */
-typedef struct _WPUUPCALLTABLE
+typedef struct _WSPUPCALLTABLE
 {
     void *lpWPUCloseEvent;              /* 0  */
     void *lpWPUCloseSocketHandle;       /* 1  */
     void *lpWPUCreateEvent;             /* 2  */
-    void *lpWPUCreateThread;            /* 3  */
-    void *lpWPUDisableBlockingHook;     /* 4  */
-    void *lpWPUFDIsSet;                 /* 5  */
-    void *lpWPUGetProviderPath;         /* 6  */
-    void *lpWPUModifyFSCloseHandle;     /* 7  */
-    void *lpWPUOpenCurrentThread;       /* 8  */
-    void *lpWPUPostMessage;             /* 9  */
-    void *lpWPUQueryBlockingCallback;   /* 10 */
-    void *lpWPUQuerySocketHandleContext;/* 11 */
-    void *lpWPUQueueApc;                /* 12 */
-    void *lpWPUResetEvent;              /* 13 */
-    void *lpWPUSetEvent;                /* 14 */
-} WPUUPCALLTABLE, *LPWPUUPCALLTABLE;
+    void *lpWPUCreateSocketHandle;      /* 3  */
+    void *lpWPUFDIsSet;                 /* 4  */
+    void *lpWPUGetProviderPath;         /* 5  */
+    void *lpWPUModifyIFSHandle;         /* 6  */
+    void *lpWPUPostMessage;             /* 7  */
+    void *lpWPUQueryBlockingCallback;   /* 8  */
+    void *lpWPUQuerySocketHandleContext;/* 9  */
+    void *lpWPUQueueApc;                /* 10 */
+    void *lpWPUResetEvent;              /* 11 */
+    void *lpWPUSetEvent;                /* 12 */
+    void *lpWPUOpenCurrentThread;       /* 13 */
+    void *lpWPUCloseThread;             /* 14 */
+} WSPUPCALLTABLE, *LPWSPUPCALLTABLE;
 
 /* WSP function signatures - for casting void* from WSPPROC_TABLE */
 
@@ -113,41 +119,45 @@ typedef int (WINAPI *LSP_WSPCONNECT_FUNC)( SOCKET, const struct sockaddr *, int,
 /* ======================================================================
  * WSPStartup entry point - TWO signatures supported
  *
- * 1) Standard 4-param (ret $0x10): most LSPs use this.
- * 2) Extended 19-param (ret $0x4c): some LSP SDKs pass the entire
- *    WPUUPCALLTABLE by value (15 function pointers expanded as
- *    individual DWORD parameters), plus an extra function pointer
- *    at param2.  Detected by disassembling ret instruction.
+ * 1) Standard (ret $0x14): 5 logical params
+ * 2) Extended 19-param (ret $0x4c): WSPUPCALLTABLE expanded by value
+ *
+ * Windows SDK WSPStartup signature:
+ *   int WSPStartup(WORD wVersionRequested,
+ *                   LPWSPDATA lpWSPData,
+ *                   LPWSAPROTOCOL_INFOW lpProtocolInfo,
+ *                   WSPUPCALLTABLE UpcallTable,   // BY VALUE!
+ *                   LPWSPPROC_TABLE lpProcTable);
+ *
+ * When WSPUPCALLTABLE is expanded by value (15 entries),
+ * total = 1 + 1 + 1 + 15 + 1 = 19 params = 76 bytes = $0x4c.
  * ===================================================================== */
 
-/* Standard WSPStartup: 4 params, stdcall ret $0x10 */
+/* Standard WSPStartup: 5 logical params */
 typedef int (WINAPI *LSP_WSPSTARTUP_FUNC)(
     WORD wVersionRequested,
+    LSP_LPWSPDATA lpWSPData,
     LPWSAPROTOCOL_INFOW lpProtocolInfo,
-    LPWPUUPCALLTABLE lpUpcallTable,
+    LPWSPUPCALLTABLE lpUpcallTable,
     LPWSPPROC_TABLE lpProcTable
 );
 
-/* Extended WSPStartup: 19 params, stdcall ret $0x4c
+/* Extended WSPStartup: 19 params (WSPUPCALLTABLE expanded by value)
  *
- * Standard SDK expansion of WPUUPCALLTABLE by value:
- *   Param1: wVersionRequested
- *   Param2: lpProtocolInfo (NOT pfnNext!)
- *   Param3-17: 15 upcall table entries (expanded)
- *   Param18: lpProcTable
- *   Param19: lpErrno
- *
- * The previous assumption that param2 was pfnNext caused
- * ERROR_INVALID_PARAMETER (87) because the DLL received
- * NULL as lpProtocolInfo. */
+ *   Param1:  wVersionRequested
+ *   Param2:  lpWSPData              (WSPDATA pointer)
+ *   Param3:  lpProtocolInfo
+ *   Param4-18: 15 WSPUPCALLTABLE entries (expanded)
+ *   Param19: lpProcTable
+ */
 typedef int (WINAPI *LSP_WSPSTARTUP_FUNC_EX)(
     WORD wVersionRequested,
+    LSP_LPWSPDATA lpWSPData,
     LPWSAPROTOCOL_INFOW lpProtocolInfo,
     void *uc0,  void *uc1,  void *uc2,  void *uc3,  void *uc4,
     void *uc5,  void *uc6,  void *uc7,  void *uc8,  void *uc9,
     void *uc10, void *uc11, void *uc12, void *uc13, void *uc14,
-    LPWSPPROC_TABLE lpProcTable,
-    int *lpErrno
+    LPWSPPROC_TABLE lpProcTable
 );
 
 /* Provider catalog entry */
